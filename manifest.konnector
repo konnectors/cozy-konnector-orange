@@ -27,8 +27,8 @@
     }
   },
   "time_interval": [
-    15,
-    21
+    14,
+    20
   ],
   "data_types": [
     "bill"
