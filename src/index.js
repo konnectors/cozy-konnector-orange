@@ -117,6 +117,8 @@ class OrangeConnector extends CookieKonnector {
     })
 
     return bills.billsHistory.billList.map(bill => ({
+      vendorRef: bill.id,
+      contractNumber: contractId,
       date: moment(bill.date, 'YYYY-MM-DD').toDate(),
       vendor: 'Orange',
       amount: bill.amount / 100,
