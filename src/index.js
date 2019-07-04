@@ -29,6 +29,10 @@ class OrangeConnector extends CookieKonnector {
 
     const contract = await this.getContracts()
 
+    if (!contract) {
+      log('warn', 'Could not find any valid contract')
+      return
+    }
     const bills = await this.getBills(contract.contractId)
 
     return this.saveBills(bills, fields.folderPath, {
@@ -140,10 +144,13 @@ class OrangeConnector extends CookieKonnector {
       url:
         'https://sso-f.orange.fr/omoi_erb/portfoliomanager/v2.0/contractSelector/users/current',
       timeout: 5000
-    })).contracts.filter(
-      doc =>
-        doc.offerName.includes('Livebox') || doc.offerName.includes('Orange')
-    )
+    })).contracts.filter(doc => {
+      return (
+        doc.offerName.includes('Livebox') ||
+        doc.offerName.includes('Orange') ||
+        doc.brand === 'Orange'
+      )
+    })
 
     return contracts[0]
   }
