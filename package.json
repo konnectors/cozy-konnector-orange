@@ -4,7 +4,7 @@
   "description": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cozy/cozy-konnector-orange.git"
+    "url": "git+https://github.com/connectors/cozy-konnector-orange.git"
   },
   "keywords": [],
   "author": "Cozy Cloud",
