@@ -1,11 +1,11 @@
 {
-  "version": "1.4.0",
+  "version": "1.5.0",
   "name": "Orange Factures",
   "type": "konnector",
   "language": "node",
   "icon": "orange.svg",
   "slug": "orange",
-  "source": "git://github.com/konnectors/cozy-konnector-orange.git",
+  "source": "git@github.com:konnectors/cozy-konnector-orange.git",
   "editor": "Cozy",
   "vendor_link": "https://www.orange.fr/",
   "categories": [
