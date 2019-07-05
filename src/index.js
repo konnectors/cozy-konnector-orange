@@ -5,7 +5,7 @@ process.env.SENTRY_DSN =
 const moment = require('moment')
 moment.locale('fr')
 
-const { log, CookieKonnector, errors, retry } = require('cozy-konnector-libs')
+const { log, CookieKonnector, errors } = require('cozy-konnector-libs')
 
 class OrangeConnector extends CookieKonnector {
   async testSession() {
@@ -14,10 +14,7 @@ class OrangeConnector extends CookieKonnector {
         return false
       }
       log('info', 'Testing session')
-      const $ = await this.getHistory()
-      const result = $('#login').length === 0
-      if (result) log('info', 'Session is OK')
-      return result
+      await this.getContracts()
     } catch (err) {
       log('warn', err.message)
       log('warn', 'Session failed')
@@ -29,9 +26,16 @@ class OrangeConnector extends CookieKonnector {
     if (!(await this.testSession())) {
       await this.logIn(fields)
     }
-    let $ = await this.fetchPage()
-    const entries = this.parsePage($)
-    return this.saveBills(entries, fields.folderPath, {
+
+    const contract = await this.getContracts()
+
+    if (!contract) {
+      log('warn', 'Could not find any valid contract')
+      return
+    }
+    const bills = await this.getBills(contract.contractId)
+
+    return this.saveBills(bills, fields.folderPath, {
       timeout: Date.now() + 60 * 1000,
       identifiers: ['orange'],
       dateDelta: 12,
@@ -103,101 +107,52 @@ class OrangeConnector extends CookieKonnector {
     log('info', 'Successfully logged in.')
   }
 
-  async fetchPage() {
-    let $
-    try {
-      $ = await retry(this.getHistory, {
-        context: this,
-        interval: 10000,
-        throw_original: true,
-        // retry only if we get a timeout error
-        predicate: err => {
-          const isTimeout = err.cause && err.cause.code === 'ETIMEDOUT'
-          if (isTimeout)
-            log('info', 'We go the famous timeout error. Trying multiple times')
-          return isTimeout
-        }
-      })
-    } catch (err) {
-      const isTimeout = err.cause && err.cause.code === 'ETIMEDOUT'
-      if (isTimeout) {
-        throw new Error(errors.VENDOR_DOWN)
-      } else {
-        throw err
-      }
-    }
-    // if multiple contracts choices, choose the first one
-    const contractChoices = $('.ec-contractPanel-description a')
-      .map(function(index, elem) {
-        const $elem = $(elem)
-        return {
-          link: $elem.attr('href'),
-          text: $elem.text()
-        }
-      })
-      .get()
-      .filter(
-        value => value.text.includes('Livebox') || value.text.includes('Orange')
-      )
-    if (contractChoices.length) {
-      // take the first orange contract at the moment
-      return this.request(
-        `https://espaceclientv3.orange.fr/${contractChoices[0].link}`
-      )
-    } else return $
-  }
-
-  parsePage($) {
-    const entries = []
-
-    // Anaylyze bill listing table.
-    log('info', 'Parsing bill pages')
-    $('table tbody tr').each(function() {
-      let date = $(this)
-        .find('td[headers=ec-dateCol]')
-        .text()
-      date = moment(date, 'LL')
-      let amount = $(this)
-        .find('td[headers=ec-amountCol]')
-        .text()
-      amount = parseFloat(
-        amount
-          .trim()
-          .replace(' €', '')
-          .replace(',', '.')
-      )
-      let fileurl = $(this)
-        .find('td[headers=ec-downloadCol] a')
-        .attr('href')
-
-      // Add a new bill information object.
-      let bill = {
-        date: date.toDate(),
-        amount,
-        fileurl,
-        filename: getFileName(date),
-        type: 'phone',
-        vendor: 'Orange'
-      }
-
-      if (bill.date != null && bill.amount != null) {
-        entries.push(bill)
-      }
-    })
-
-    log('info', `Bill retrieved: ${entries.length} found`)
-    return entries
-  }
-
-  getHistory() {
+  async getBills(contractId) {
     this.request = this.requestFactory({
-      json: false,
-      cheerio: true
+      json: true,
+      cheerio: false,
+      headers: {
+        'X-Orange-Caller-Id': 'ECQ'
+      }
     })
-    return this.request({
-      url: 'https://espaceclientv3.orange.fr/?page=factures-historique',
+    const bills = await this.request({
+      url: `https://sso-f.orange.fr/omoi_erb/facture/v2.0/billsAndPaymentInfos/users/current/contracts/${contractId}`,
       timeout: 5000
     })
+
+    return bills.billsHistory.billList.map(bill => ({
+      vendorRef: bill.id,
+      contractNumber: contractId,
+      date: moment(bill.date, 'YYYY-MM-DD').toDate(),
+      vendor: 'Orange',
+      amount: bill.amount / 100,
+      fileurl:
+        'https://sso-f.orange.fr/omoi_erb/facture/v1.0/pdf' + bill.hrefPdf,
+      filename: getFileName(bill.date)
+    }))
+  }
+
+  async getContracts() {
+    this.request = this.requestFactory({
+      json: true,
+      cheerio: false,
+      headers: {
+        'X-Orange-Caller-Id': 'ECQ'
+      }
+    })
+    const contracts = (await this.request({
+      url:
+        'https://sso-f.orange.fr/omoi_erb/portfoliomanager/v2.0/contractSelector/users/current',
+      timeout: 5000
+    })).contracts.filter(doc => {
+      return (
+        doc.offerName.includes('Livebox') ||
+        doc.offerName.includes('Orange') ||
+        doc.brand === 'Orange'
+      )
+    })
+
+    return contracts[0]
   }
 }
 
@@ -208,5 +163,5 @@ const connector = new OrangeConnector({
 connector.run()
 
 function getFileName(date) {
-  return `${date.format('YYYYMM')}_orange.pdf`
+  return `${moment(date, 'YYYY-MM-DD').format('YYYYMM')}_orange.pdf`
 }
