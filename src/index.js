@@ -2,6 +2,12 @@ process.env.SENTRY_DSN =
   process.env.SENTRY_DSN ||
   'https://913841dc7a6a44a59bb26b70df222286:34e4ff6001884d0fac9091d4c1fee102@sentry.cozycloud.cc/25'
 
+const secrets = JSON.parse(process.env.COZY_PARAMETERS || '{}').secret
+if (secrets.proxyUrl) {
+  process.env.http_proxy = secrets.proxyUrl
+  process.env.https_proxy = secrets.proxyUrl
+}
+
 const moment = require('moment')
 moment.locale('fr')
 
