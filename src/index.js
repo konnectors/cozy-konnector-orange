@@ -35,14 +35,22 @@ class OrangeConnector extends CookieKonnector {
       await this.logIn(fields)
     }
 
-    const contract = await this.getContracts()
+    const contracts = await this.getContracts()
 
-    if (!contract) {
+    if (!contracts) {
       log('warn', 'Could not find any valid contract')
       return
     }
-    const bills = await this.getBills(contract.contractId)
-
+    let bills = []
+    try {
+      bills = await this.getBills(contracts[0].contractId)
+    } catch(e) {
+      if (e.message && e.message.includes('omoifars-452')) {
+        bills = await this.getBills(contracts[1].contractId)
+      } else {
+        throw e
+      }
+    }
     return this.saveBills(bills, fields.folderPath, {
       timeout: Date.now() + 60 * 1000,
       identifiers: ['orange'],
@@ -164,19 +172,19 @@ class OrangeConnector extends CookieKonnector {
         'X-Orange-Caller-Id': 'ECQ'
       }
     })
-    const contracts = (await this.request({
+    let contracts = (await this.request({
       url:
         'https://sso-f.orange.fr/omoi_erb/portfoliomanager/v2.0/contractSelector/users/current',
       timeout: 5000
-    })).contracts.filter(doc => {
+    })).contracts
+    contracts.filter(doc => {
       return (
         doc.offerName.includes('Livebox') ||
         doc.offerName.includes('Orange') ||
         doc.brand === 'Orange'
       )
     })
-
-    return contracts[0]
+    return contracts
   }
 }
 
