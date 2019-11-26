@@ -97,6 +97,11 @@ class OrangeConnector extends CookieKonnector {
         }
       })
 
+      if (body.stage === 'changePassword') {
+        log('warn', 'Password change needed')
+        throw new Error('changePassword')
+      }
+
       if (body.credential != null || body.password != null) {
         throw new Error(body.credential || body.password)
       }
@@ -108,6 +113,8 @@ class OrangeConnector extends CookieKonnector {
         throw new Error(errors.VENDOR_DOWN)
       } else if (err.statusCode === 401) {
         throw new Error(errors.LOGIN_FAILED)
+      } else if (err.message === 'changePassword') {
+        throw new Error(errors.USER_ACTION_NEEDED)
       } else {
         throw new Error(errors.VENDOR_DOWN)
       }
