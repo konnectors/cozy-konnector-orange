@@ -100,6 +100,11 @@ class OrangeConnector extends CookieKonnector {
         }
       })
 
+      if (body.stage === 'changePassword') {
+        log('warn', 'Password change needed')
+        throw new Error('changePassword')
+      }
+
       if (body.credential != null || body.password != null) {
         throw new Error(body.credential || body.password)
       }
@@ -111,6 +116,8 @@ class OrangeConnector extends CookieKonnector {
         throw new Error(errors.VENDOR_DOWN)
       } else if (err.statusCode === 401) {
         throw new Error(errors.LOGIN_FAILED)
+      } else if (err.message === 'changePassword') {
+        throw new Error(errors.USER_ACTION_NEEDED)
       } else {
         throw new Error(errors.VENDOR_DOWN)
       }
@@ -126,22 +133,27 @@ class OrangeConnector extends CookieKonnector {
         'X-Orange-Caller-Id': 'ECQ'
       }
     })
-    const bills = await this.request({
-      url: `https://sso-f.orange.fr/omoi_erb/facture/v2.0/billsAndPaymentInfos/users/current/contracts/${contractId}`,
-      timeout: 5000
-    })
+    try {
+      const bills = await this.request({
+        url: `https://sso-f.orange.fr/omoi_erb/facture/v2.0/billsAndPaymentInfos/users/current/contracts/${contractId}`,
+        timeout: 5000
+      })
 
-    if (!get(bills, 'billsHistory.billList')) return []
-    return bills.billsHistory.billList.map(bill => ({
-      vendorRef: bill.id,
-      contractNumber: contractId,
-      date: moment(bill.date, 'YYYY-MM-DD').toDate(),
-      vendor: 'Orange',
-      amount: bill.amount / 100,
-      fileurl:
-        'https://sso-f.orange.fr/omoi_erb/facture/v1.0/pdf' + bill.hrefPdf,
-      filename: getFileName(bill.date)
-    }))
+      if (!get(bills, 'billsHistory.billList')) return []
+      return bills.billsHistory.billList.map(bill => ({
+        vendorRef: bill.id,
+        contractNumber: contractId,
+        date: moment(bill.date, 'YYYY-MM-DD').toDate(),
+        vendor: 'Orange',
+        amount: bill.amount / 100,
+        fileurl:
+          'https://sso-f.orange.fr/omoi_erb/facture/v1.0/pdf' + bill.hrefPdf,
+        filename: getFileName(bill.date)
+      }))
+    } catch (err) {
+      log('error', err.message)
+      throw new Error(errors.VENDOR_DOWN)
+    }
   }
 
   async getContracts() {
