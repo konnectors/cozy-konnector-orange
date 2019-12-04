@@ -44,12 +44,19 @@ class OrangeConnector extends CookieKonnector {
     let bills = []
     try {
       bills = await this.getBills(contracts[0].contractId)
-    } catch(e) {
+    } catch (e) {
       if (e.message && e.message.includes('omoifars-452')) {
         bills = await this.getBills(contracts[1].contractId)
       } else {
         throw e
       }
+    }
+    try {
+      for (const contract of contracts) {
+        getContractLabel(contract)
+      }
+    } catch (e) {
+      log('debug', e)
     }
     return this.saveBills(bills, fields.folderPath, {
       timeout: Date.now() + 60 * 1000,
@@ -196,4 +203,19 @@ connector.run()
 
 function getFileName(date) {
   return `${moment(date, 'YYYY-MM-DD').format('YYYYMM')}_orange.pdf`
+}
+
+function getContractLabel(contract) {
+  if (contract.subType === 'mobile') {
+    // return the string Mobile ({phone number without spaces})
+    return `Mobile (${contract.lineNumber.replace(/\s/g, '')})`
+  } else if (contract.type === 'internet') {
+    // return the string Internet ({phone number without spaces})
+    return `Internet (${contract.lineNumber.replace(/\s/g, '')})`
+  } else {
+    log(
+      'warn',
+      `Unknown account type ${contract.type} and subtype ${contract.subType}`
+    )
+  }
 }
