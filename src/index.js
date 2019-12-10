@@ -30,8 +30,8 @@ class OrangeConnector extends CookieKonnector {
       log('info', 'Testing session')
       await this.getContracts()
     } catch (err) {
-      log('warn', err.message)
-      log('warn', 'Session failed')
+      log('debug', err.message)
+      log('info', 'Saved session usage failed, connecting')
       return false
     }
   }
@@ -41,14 +41,18 @@ class OrangeConnector extends CookieKonnector {
       await this.logIn(fields)
     }
 
-    const contracts = await this.getContracts()
+    let contracts = await this.getContracts()
     if (!contracts || contracts.length === 0) {
-      log('warn', 'Could not find any valid contract')
+      log('warn', 'Could not find any valid contract, exiting')
       return
     }
 
     let bills = []
     for (const contract of contracts) {
+      // Test contract for brand name, for futur orange/sosh fusion
+      if (contract.brand != 'Orange' && contract.brand != 'Sosh') {
+        log('warn', `Contract with unknown brand ${contract.brand}`)
+      }
       let contractBills = []
       try {
         contractBills = await this.getBills(contract)
@@ -56,9 +60,9 @@ class OrangeConnector extends CookieKonnector {
         // Unknown error that lead to no bill available
         if (e.message && e.message.includes('omoifars-452')) {
           log(
-            'debug',
+            'warn',
             `Contract #${contracts.indexOf(contract) +
-              1} impossible to fetch bills`
+              1} impossible to fetch bills, type ${contract.type}`
           )
           // Jump to next contract
           continue
@@ -192,18 +196,11 @@ class OrangeConnector extends CookieKonnector {
         'X-Orange-Caller-Id': 'ECQ'
       }
     })
-    let contracts = (await this.request({
+    const contracts = (await this.request({
       url:
         'https://sso-f.orange.fr/omoi_erb/portfoliomanager/v2.0/contractSelector/users/current',
       timeout: 5000
     })).contracts
-    contracts.filter(doc => {
-      return (
-        doc.offerName.includes('Livebox') ||
-        doc.offerName.includes('Orange') ||
-        doc.brand === 'Orange'
-      )
-    })
     log('debug', `${contracts.length} contracts object found`)
     return contracts
   }
@@ -222,16 +219,28 @@ function getFileName(date, amount) {
 }
 
 function getContractLabel(contract) {
-  log(
-    'warn',
-    `Unknown account type ${contract.type} and subtype ${contract.subType}`
-  )
-  if (contract.lineNumber === undefined) {
-    log('warn', 'Line number undefined')
+  let subLabel = ''
+  if (contract.type.includes('mobile')) {
+    // match type mobilePostpaid & mobilePrepaid
+    subLabel = 'Mobile'
+  } else if (contract.type == 'internet') {
+    subLabel = 'Internet'
+  } else if (contract.type == 'fixe') {
+    subLabel = 'Fixe'
+  } else if (contract.type == 'open') {
+    subLabel = 'Offre Open'
+  } else if (contract.type == 'pro') {
+    subLabel = 'Offre Pro'
+  } else if (contract.type == 'autre' && contract.subType == 'airbox') {
+    subLabel = 'Airbox'
+  } else {
+    log(
+      'warn',
+      `Unknown account type ${contract.type} and subtype ${contract.subType}`
+    )
+    return undefined
   }
-  if (!contract.lineNumber.replace(/\s/g, '').match(/\d{10}/)) {
-    log('warn', 'Line number not formatted')
-  }
+  return `${subLabel} (${contract.lineNumber.replace(/\s/g, '')})`
 }
 
 function generate12LastOldFilename() {
