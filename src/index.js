@@ -222,17 +222,15 @@ function getFileName(date, amount) {
 }
 
 function getContractLabel(contract) {
-  if (contract.subType === 'mobile') {
-    // return the string Mobile ({phone number without spaces})
-    return `Mobile (${contract.lineNumber.replace(/\s/g, '')})`
-  } else if (contract.type === 'internet') {
-    // return the string Internet ({phone number without spaces})
-    return `Internet (${contract.lineNumber.replace(/\s/g, '')})`
-  } else {
-    log(
-      'warn',
-      `Unknown account type ${contract.type} and subtype ${contract.subType}`
-    )
+  log(
+    'warn',
+    `Unknown account type ${contract.type} and subtype ${contract.subType}`
+  )
+  if (contract.lineNumber === undefined) {
+    log('warn', 'Line number undefined')
+  }
+  if (!contract.lineNumber.replace(/\s/g, '').match(/\d{10}/)) {
+    log('warn', 'Line number not formatted')
   }
 }
 
