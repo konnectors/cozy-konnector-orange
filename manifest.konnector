@@ -1,6 +1,6 @@
 {
   "version": "1.9.0",
-  "name": "Orange Factures",
+  "name": "Orange",
   "type": "konnector",
   "language": "node",
   "icon": "orange.svg",
