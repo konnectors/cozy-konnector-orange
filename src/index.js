@@ -238,7 +238,7 @@ function getContractLabel(contract) {
       'warn',
       `Unknown account type ${contract.type} and subtype ${contract.subType}`
     )
-    return undefined
+    subLabel = 'Inconnu'
   }
   return `${subLabel} (${contract.lineNumber.replace(/\s/g, '')})`
 }
