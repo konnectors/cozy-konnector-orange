@@ -60,10 +60,7 @@ class OrangeConnector extends CookieKonnector {
     }
     await this.saveBills(bills, fields.folderPath, {
       timeout: Date.now() + 60 * 1000,
-      identifiers: ['orange'],
       linkBankOperations: false,
-      sourceAccount: this.accountId,
-      sourceAccountIdentifier: fields.login,
       fileIdAttributes: ['contractId', 'vendorRef']
     })
     // Deleting old bills and files from this month and 11 older
