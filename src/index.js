@@ -73,8 +73,19 @@ class OrangeConnector extends CookieKonnector {
   async logIn(fields) {
     try {
       this.request = this.requestFactory({
-        json: true,
-        cheerio: false
+        json: false,
+        cheerio: false,
+        gzip: true,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:74.0) Gecko/20100101 Firefox/74.0',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3',
+          'Upgrade-Insecure-Requests': '1',
+          Pragma: 'no-cache',
+          'Cache-Control': 'no-cache'
+        }
       })
       const resolveWithFullResponse = true
 
@@ -97,6 +108,7 @@ class OrangeConnector extends CookieKonnector {
         method: 'POST',
         url: 'https://login.orange.fr/front/login',
         headers,
+        json: true,
         body: {
           login
         },
@@ -108,6 +120,7 @@ class OrangeConnector extends CookieKonnector {
 
       const body = await this.request({
         method: 'POST',
+        json: true,
         url: 'https://login.orange.fr/front/password',
         headers,
         body: {
