@@ -149,6 +149,8 @@ class OrangeConnector extends CookieKonnector {
         throw new Error(errors.LOGIN_FAILED)
       } else if (err.message === 'changePassword') {
         throw new Error(errors.USER_ACTION_NEEDED)
+      } else if (err.message === 'CAPTCHA_RESOLUTION_FAILED') {
+        throw err
       } else {
         throw new Error(errors.VENDOR_DOWN)
       }
