@@ -6,7 +6,7 @@
   "clientSide": true,
   "icon": "icon.svg",
   "slug": "orange",
-  "source": "git@github.com:konnectors/cozy-konnector-template.git",
+  "source": "git://github.com/konnectors/cozy-konnector-orange.git",
   "editor": "Cozy",
   "vendor_link": "https://www.orange.fr/portail",
   "categories": [
