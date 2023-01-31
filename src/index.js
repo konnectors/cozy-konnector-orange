@@ -1,5 +1,5 @@
 import { ContentScript } from 'cozy-ccc-libs/src/contentscript'
-import {blobToBase64} from 'cozy-ccc-libs/src/utils'
+import { blobToBase64 } from 'cozy-ccc-libs/src/contentscript/utils'
 import Minilog from '@cozy/minilog'
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
@@ -21,11 +21,10 @@ let userInfos = []
 var proxied = window.XMLHttpRequest.prototype.open
 // Overriding the open() method
 window.XMLHttpRequest.prototype.open = function () {
+  var originalResponse = this
   // Intercepting response for recent bills informations.
   if (arguments[1].includes('/users/current/contracts')) {
-    var originalResponse = this
-
-    originalResponse.addEventListener('readystatechange', function (event) {
+    originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         // The response is a unique string, in order to access information parsing into JSON is needed.
         const jsonBills = JSON.parse(originalResponse.responseText)
@@ -36,9 +35,7 @@ window.XMLHttpRequest.prototype.open = function () {
   }
   // Intercepting response for old bills informations.
   if (arguments[1].includes('/facture/historicBills?')) {
-    var originalResponse = this
-
-    originalResponse.addEventListener('readystatechange', function (event) {
+    originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         const jsonBills = JSON.parse(originalResponse.responseText)
         oldBills.push(jsonBills)
@@ -48,9 +45,7 @@ window.XMLHttpRequest.prototype.open = function () {
   }
   // Intercepting user infomations for Identity object
   if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
-    var originalResponse = this
-
-    originalResponse.addEventListener('readystatechange', function (event) {
+    originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         const jsonInfos = JSON.parse(originalResponse.responseText)
         userInfos.push(jsonInfos)
@@ -60,12 +55,11 @@ window.XMLHttpRequest.prototype.open = function () {
   }
   // Intercepting response for recent bills blobs.
   if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
-    var originalResponse = this
-    originalResponse.addEventListener('readystatechange', function (event) {
+    originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         // Pushing in an array the converted to base64 blob and pushing in another array it's href to match the indexes.
         recentPromisesToConvertBlobToBase64.push(
-          blobToBase64(originalResponse.response),
+          blobToBase64(originalResponse.response)
         )
         recentXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
 
@@ -76,11 +70,10 @@ window.XMLHttpRequest.prototype.open = function () {
   }
   // Intercepting response for old bills blobs.
   if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
-    var originalResponse = this
-    originalResponse.addEventListener('readystatechange', function (event) {
+    originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         oldPromisesToConvertBlobToBase64.push(
-          blobToBase64(originalResponse.response),
+          blobToBase64(originalResponse.response)
         )
         oldXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
 
@@ -91,31 +84,34 @@ window.XMLHttpRequest.prototype.open = function () {
   return proxied.apply(this, [].slice.call(arguments))
 }
 
-
 class OrangeContentScript extends ContentScript {
   async ensureAuthenticated() {
     await this.goto(DEFAULT_PAGE_URL)
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
-    if(document.querySelector('div[class="o-ribbon-is-connected"]')){
+    if (document.querySelector('div[class="o-ribbon-is-connected"]')) {
       return true
     }
-    if (credentials){
+    if (credentials) {
       log.debug('found credentials, processing')
-      await this.waitForElementInWorker('a[class="btn btn-primary btn-inverse"]')
+      await this.waitForElementInWorker(
+        'a[class="btn btn-primary btn-inverse"]'
+      )
       await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
       await this.waitForElementInWorker('#o-ribbon')
-      const {testEmail, type} = await this.runInWorker('getTestEmail')
-      if (credentials.email === testEmail ){
-        if (type === 'mail'){
+      const { testEmail, type } = await this.runInWorker('getTestEmail')
+      if (credentials.email === testEmail) {
+        if (type === 'mail') {
           const stayLogButton = await this.runInWorker('getStayLoggedButton')
-          if ( stayLogButton != null) {
+          if (stayLogButton != null) {
             stayLogButton.click()
-            await this.waitForElementInWorker('div[class="o-ribbon-is-connected"]')
+            await this.waitForElementInWorker(
+              'div[class="o-ribbon-is-connected"]'
+            )
             return true
           }
         }
-        if(type === 'mailList'){
+        if (type === 'mailList') {
           log.debug('found credentials, trying to autoLog')
           const mailSelector = `a[id="choose-account-${testEmail}"]`
           await this.runInWorker('click', mailSelector)
@@ -123,51 +119,60 @@ class OrangeContentScript extends ContentScript {
           return true
         }
       }
-      
-      if (credentials.email != testEmail){
+
+      if (credentials.email != testEmail) {
         log.debug('getting in different testEmail conditions')
-        await this.clickAndWait('#changeAccountLink','#undefined-label')
-        await this.clickAndWait('#undefined-label','#login')
+        await this.clickAndWait('#changeAccountLink', '#undefined-label')
+        await this.clickAndWait('#undefined-label', '#login')
         await this.tryAutoLogin(credentials, 'full')
         return true
       }
     }
-    if (!credentials){
+    if (!credentials) {
       log.debug('no credentials found, use normal user login')
-      await this.waitForElementInWorker('a[class="btn btn-primary btn-inverse"]')
-      await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]' )
+      await this.waitForElementInWorker(
+        'a[class="btn btn-primary btn-inverse"]'
+      )
+      await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
       await this.waitForElementInWorker('#o-ribbon')
       const rememberUser = await this.runInWorker('checkIfRemember')
-      if(rememberUser){
+      if (rememberUser) {
         log.debug('Already visited')
-        await this.clickAndWait('#undefined-label','#login')
+        await this.clickAndWait('#undefined-label', '#login')
         await this.waitForUserAuthentication()
         return true
       }
-      await this.clickAndWait('a[class="btn btn-primary btn-inverse"]','#changeAccountLink')
-      await this.clickAndWait('#changeAccountLink','#undefined-label')
-      await this.clickAndWait('#undefined-label','#login')
+      await this.clickAndWait(
+        'a[class="btn btn-primary btn-inverse"]',
+        '#changeAccountLink'
+      )
+      await this.clickAndWait('#changeAccountLink', '#undefined-label')
+      await this.clickAndWait('#undefined-label', '#login')
       await this.waitForUserAuthentication()
       return true
     }
-    
+
     log.debug('Not authenticated')
     throw new Error('LOGIN_FAILED')
   }
 
   async checkAuthenticated() {
-    const loginField = document.querySelector('p[data-testid="selected-account-login"]')
+    const loginField = document.querySelector(
+      'p[data-testid="selected-account-login"]'
+    )
     const passwordField = document.querySelector('#password')
     if (loginField && passwordField) {
-       const userCredentials = await this.findAndSendCredentials.bind(this)(loginField)
-       this.log('Sending user credentials to Pilot')
-       this.sendToPilot({
-         userCredentials
-        })
-      }
-      if (
-        document.location.href.includes(
-        'https://espace-client.orange.fr/accueil',
+      const userCredentials = await this.findAndSendCredentials.bind(this)(
+        loginField
+      )
+      this.log('Sending user credentials to Pilot')
+      this.sendToPilot({
+        userCredentials
+      })
+    }
+    if (
+      document.location.href.includes(
+        'https://espace-client.orange.fr/accueil'
       ) &&
       document.querySelector('[class="o-ribbon-is-connected"]')
     ) {
@@ -179,27 +184,27 @@ class OrangeContentScript extends ContentScript {
 
   async waitForUserAuthentication() {
     log.debug('waitForUserAuthentication start')
-    await this.setWorkerState({visible: true, url: DEFAULT_PAGE_URL})
-    await this.runInWorkerUntilTrue({method: 'waitForAuthenticated'})
-    await this.setWorkerState({visible: false, url: DEFAULT_PAGE_URL})
+    await this.setWorkerState({ visible: true, url: DEFAULT_PAGE_URL })
+    await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
+    await this.setWorkerState({ visible: false, url: DEFAULT_PAGE_URL })
   }
 
   async tryAutoLogin(credentials, type) {
-      this.log('Trying autologin')
-      await this.goto(DEFAULT_PAGE_URL)
-      await this.autoLogin(credentials, type)
+    this.log('Trying autologin')
+    await this.goto(DEFAULT_PAGE_URL)
+    await this.autoLogin(credentials, type)
   }
-  
+
   async autoLogin(credentials, type) {
     this.log('Autologin start')
     const emailSelector = '#login'
     const passwordInputSelector = '#password'
     const loginButton = '#btnSubmit'
-    if (type === 'half'){
+    if (type === 'half') {
       this.log('wait for password field')
       await this.waitForElementInWorker(passwordInputSelector)
       await this.runInWorker('fillingForm', credentials)
-  
+
       await this.runInWorker('click', loginButton)
       await this.waitForElementInWorker('#o-ribbon')
       return true
@@ -212,10 +217,10 @@ class OrangeContentScript extends ContentScript {
     await this.runInWorker('fillingForm', credentials)
     await this.runInWorker('click', loginButton)
   }
-  
+
   async fetch(context) {
     this.log('Starting fetch')
-    if(this.store.userCredentials != undefined){
+    if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
     await this.waitForElementInWorker('a[class="ob1-link-icon ml-1 py-1"]')
@@ -224,11 +229,11 @@ class OrangeContentScript extends ContentScript {
       this.log('clientRef found')
       await this.clickAndWait(
         `a[href="facture-paiement/${clientRef}"]`,
-        '[data-e2e="bp-tile-historic"]',
+        '[data-e2e="bp-tile-historic"]'
       )
       await this.clickAndWait(
         '[data-e2e="bp-tile-historic"]',
-        '[aria-labelledby="bp-billsHistoryTitle"]',
+        '[aria-labelledby="bp-billsHistoryTitle"]'
       )
       const redFrame = await this.runInWorker('checkRedFrame')
       if (redFrame !== null) {
@@ -238,40 +243,40 @@ class OrangeContentScript extends ContentScript {
     }
     let recentPdfNumber = await this.runInWorker('getPdfNumber')
     await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]',
+      '[data-e2e="bh-more-bills"]',
+      '[aria-labelledby="bp-historicBillsHistoryTitle"]'
     )
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
-    for (let i = 0; i < recentPdfNumber; i++){
+    for (let i = 0; i < recentPdfNumber; i++) {
       await this.runInWorker('waitForRecentPdfClicked', i)
       await this.clickAndWait(
         'a[class="h1 menu-subtitle mb-0 pb-1"]',
-        '[data-e2e="bp-tile-historic"]',
+        '[data-e2e="bp-tile-historic"]'
       )
       await this.clickAndWait(
-      '[data-e2e="bp-tile-historic"]',
-      '[aria-labelledby="bp-billsHistoryTitle"]',
+        '[data-e2e="bp-tile-historic"]',
+        '[aria-labelledby="bp-billsHistoryTitle"]'
       )
       await this.clickAndWait(
         '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]',
+        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
     }
     this.log('recentPdf loop ended')
-    for (let i = 0; i < oldPdfNumber; i++){
+    for (let i = 0; i < oldPdfNumber; i++) {
       await this.runInWorker('waitForOldPdfClicked', i)
       await this.clickAndWait(
         'a[class="h1 menu-subtitle mb-0 pb-1"]',
-        '[data-e2e="bp-tile-historic"]',
+        '[data-e2e="bp-tile-historic"]'
       )
       await this.clickAndWait(
-      '[data-e2e="bp-tile-historic"]',
-      '[aria-labelledby="bp-billsHistoryTitle"]',
+        '[data-e2e="bp-tile-historic"]',
+        '[aria-labelledby="bp-billsHistoryTitle"]'
       )
       await this.clickAndWait(
         '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]',
+        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
     }
     this.log('oldPdf loop ended')
@@ -280,7 +285,7 @@ class OrangeContentScript extends ContentScript {
     this.store.dataUri = []
     for (let i = 0; i < this.store.resolvedBase64.length; i++) {
       let dateArray = this.store.resolvedBase64[i].href.match(
-        /([0-9]{4})-([0-9]{2})-([0-9]{2})/g,
+        /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
       )
       this.store.resolvedBase64[i].date = dateArray[0]
       const index = this.store.allBills.findIndex(function (bill) {
@@ -297,7 +302,7 @@ class OrangeContentScript extends ContentScript {
         filename: await getFileName(
           this.store.allBills[index].date,
           this.store.allBills[index].amount / 100,
-          this.store.allBills[index].id || this.store.allBills[index].tecId,
+          this.store.allBills[index].id || this.store.allBills[index].tecId
         ),
         dataUri: this.store.resolvedBase64[i].uri,
         fileAttributes: {
@@ -310,27 +315,29 @@ class OrangeContentScript extends ContentScript {
             datetimeLabel: 'startDate',
             isSubscription: true,
             startDate: this.store.allBills[index].date,
-            carbonCopy: true,
-          },
-        },
+            carbonCopy: true
+          }
+        }
       })
     }
     await this.saveIdentity({
       mailAdress: this.store.infosIdentity.mail,
       city: this.store.infosIdentity.city,
-      phoneNumber: this.store.infosIdentity.phoneNumber,
+      phoneNumber: this.store.infosIdentity.phoneNumber
     })
     await this.saveBills(this.store.dataUri, {
       context,
       fileIdAttributes: ['filename'],
       contentType: 'application/pdf',
-      qualificationLabel: 'isp_invoice',
+      qualificationLabel: 'isp_invoice'
     })
   }
 
   findMoreBillsButton() {
     this.log('Starting findMoreBillsButton')
-    const button = Array.from(document.querySelector('[data-e2e="bh-more-bills"]'))
+    const button = Array.from(
+      document.querySelector('[data-e2e="bh-more-bills"]')
+    )
     this.log('Exiting findMoreBillsButton')
     return button
   }
@@ -338,7 +345,7 @@ class OrangeContentScript extends ContentScript {
   findPdfButtons() {
     this.log('Starting findPdfButtons')
     const buttons = Array.from(
-      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]'),
+      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
     )
     return buttons
   }
@@ -349,37 +356,43 @@ class OrangeContentScript extends ContentScript {
     return button
   }
 
-  findPdfNumber(){
+  findPdfNumber() {
     this.log('Starting findPdfNumber')
     const buttons = Array.from(
-      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]'),
+      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
     )
     return buttons.length
   }
 
-  findStayLoggedButton(){
+  findStayLoggedButton() {
     this.log('Starting findStayLoggedButton')
-    const button = document.querySelector('[data-oevent-label="bouton_rester_identifie"]')
+    const button = document.querySelector(
+      '[data-oevent-label="bouton_rester_identifie"]'
+    )
     return button
   }
 
-  waitForRecentPdfClicked(i){
-    let recentPdfs = document.querySelectorAll('[aria-labelledby="bp-billsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]')
+  waitForRecentPdfClicked(i) {
+    let recentPdfs = document.querySelectorAll(
+      '[aria-labelledby="bp-billsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]'
+    )
     recentPdfs[i].click()
   }
 
-  waitForOldPdfClicked(i){
-    let oldPdfs = document.querySelectorAll('[aria-labelledby="bp-historicBillsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]')
+  waitForOldPdfClicked(i) {
+    let oldPdfs = document.querySelectorAll(
+      '[aria-labelledby="bp-historicBillsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]'
+    )
     oldPdfs[i].click()
   }
 
   async fillingForm(credentials) {
-    if(document.querySelector('#login')){
+    if (document.querySelector('#login')) {
       this.log('filling email field')
       document.querySelector('#login').value = credentials.email
       return
     }
-    if (document.querySelector('#password')){
+    if (document.querySelector('#password')) {
       this.log('filling password field')
       document.querySelector('#password').value = credentials.password
       return
@@ -390,19 +403,16 @@ class OrangeContentScript extends ContentScript {
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
       this.log("Couldn't get a sourceAccountIdentifier, using default")
-      return {sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER}
+      return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
     }
     return {
-      sourceAccountIdentifier: sourceAccountId,
+      sourceAccountIdentifier: sourceAccountId
     }
-    
   }
-  
+
   async getUserMail() {
     try {
-      const result = document.querySelector(
-        '.o-identityLayer-detail',
-      ).innerHTML
+      const result = document.querySelector('.o-identityLayer-detail').innerHTML
       if (result) {
         return result
       }
@@ -423,15 +433,16 @@ class OrangeContentScript extends ContentScript {
 
   async findAndSendCredentials(loginField) {
     this.log('getting in findAndSendCredentials')
-    let userLogin = loginField.innerHTML.replace('<strong>', '').replace('</strong>', '')
+    let userLogin = loginField.innerHTML
+      .replace('<strong>', '')
+      .replace('</strong>', '')
     let divPassword = document.querySelector('#password').value
     const userCredentials = {
       email: userLogin,
-      password:divPassword,
+      password: divPassword
     }
-      
-    return userCredentials
 
+    return userCredentials
   }
 
   async findClientRef() {
@@ -468,7 +479,7 @@ class OrangeContentScript extends ContentScript {
 
   async checkOldBillsRedFrame() {
     const redFrame = document.querySelector(
-      '.alert-container alert-container-sm alert-danger mb-0',
+      '.alert-container alert-container-sm alert-danger mb-0'
     )
     return redFrame
   }
@@ -476,23 +487,25 @@ class OrangeContentScript extends ContentScript {
   async getTestEmail() {
     this.log('Getting in getTestEmail')
     const mail = document.querySelector(
-      'p[data-testid="selected-account-login"]',
+      'p[data-testid="selected-account-login"]'
     )
     const mailList = document.querySelector('ul[data-testid="accounts-list"]')
-    if(mail){
-      const testEmail = mail.innerHTML.replace('<strong>', '').replace('</strong>', '')
+    if (mail) {
+      const testEmail = mail.innerHTML
+        .replace('<strong>', '')
+        .replace('</strong>', '')
       const type = 'mail'
       if (testEmail) {
-        return {testEmail, type}
+        return { testEmail, type }
       }
       return null
     }
-    if(mailList){
+    if (mailList) {
       const rawMail = mailList.children[0].querySelector('a').getAttribute('id')
       const testEmail = rawMail.split('choose-account-')[1]
       const type = 'mailList'
       if (testEmail) {
-        return {testEmail, type}
+        return { testEmail, type }
       }
       return null
     }
@@ -510,7 +523,7 @@ class OrangeContentScript extends ContentScript {
     return pdfNumber
   }
 
-  async getStayLoggedButton(){
+  async getStayLoggedButton() {
     this.log('Starting getStayLoggedButton')
     const button = this.findStayLoggedButton()
     return button
@@ -520,7 +533,7 @@ class OrangeContentScript extends ContentScript {
     let resolvedBase64 = []
     this.log('Awaiting promises')
     const recentToBase64 = await Promise.all(
-      recentPromisesToConvertBlobToBase64,
+      recentPromisesToConvertBlobToBase64
     )
     const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
     this.log('Processing promises')
@@ -529,7 +542,7 @@ class OrangeContentScript extends ContentScript {
     for (let i = 0; i < promisesToBase64.length; i++) {
       resolvedBase64.push({
         uri: promisesToBase64[i],
-        href: xhrUrls[i],
+        href: xhrUrls[i]
       })
     }
     const recentBillsToAdd = recentBills[0].billsHistory.billList
@@ -539,48 +552,50 @@ class OrangeContentScript extends ContentScript {
     const infosIdentity = {
       city: userInfos[0].contracts[0].contractInstallationArea.city,
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
-      mail: document.querySelector('.o-identityLayer-detail').innerHTML,
+      mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
     await this.sendToPilot({
       resolvedBase64,
       allBills,
-      infosIdentity,
+      infosIdentity
     })
   }
 
-  checkIfRemember(){
+  checkIfRemember() {
     const link = document.querySelector('#changeAccountLink')
     const button = document.querySelector('#undefined-label')
-    if(link){
+    if (link) {
       return false
     }
-    if(button){
+    if (button) {
       return true
     }
   }
 }
 
 const connector = new OrangeContentScript()
-connector.init({
-  additionalExposedMethodsNames: [
-    'getUserMail',
-    'findClientRef',
-    'checkRedFrame',
-    'getMoreBillsButton',
-    'checkOldBillsRedFrame',
-    'processingBills',
-    'waitForUserAuthentication',
-    'getTestEmail',
-    'fillingForm',
-    'getPdfNumber',
-    'waitForRecentPdfClicked',
-    'waitForOldPdfClicked',
-    'getStayLoggedButton',
-    'checkIfRemember',
-  ],
-}).catch((err) => {
-  console.warn(err)
-})
+connector
+  .init({
+    additionalExposedMethodsNames: [
+      'getUserMail',
+      'findClientRef',
+      'checkRedFrame',
+      'getMoreBillsButton',
+      'checkOldBillsRedFrame',
+      'processingBills',
+      'waitForUserAuthentication',
+      'getTestEmail',
+      'fillingForm',
+      'getPdfNumber',
+      'waitForRecentPdfClicked',
+      'waitForOldPdfClicked',
+      'getStayLoggedButton',
+      'checkIfRemember'
+    ]
+  })
+  .catch(err => {
+    log('warn', err)
+  })
 
 // Used for debug purposes only
 // function sleep(delay) {
