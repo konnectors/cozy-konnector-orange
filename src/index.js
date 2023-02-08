@@ -99,9 +99,14 @@ class OrangeContentScript extends ContentScript {
       )
       await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
       await this.waitForElementInWorker('#o-ribbon')
+      await this.waitForElementInWorker(
+        'p[data-testid="selected-account-login"]'
+      )
       const { testEmail, type } = await this.runInWorker('getTestEmail')
       if (credentials.email === testEmail) {
         if (type === 'mail') {
+          await this.tryAutoLogin(credentials, 'half')
+          await this.waitForElementInWorker('#o-ribbon-right')
           const stayLogButton = await this.runInWorker('getStayLoggedButton')
           if (stayLogButton != null) {
             stayLogButton.click()
@@ -109,7 +114,13 @@ class OrangeContentScript extends ContentScript {
               'div[class="o-ribbon-is-connected"]'
             )
             return true
+          } else {
+            await this.waitForElementInWorker(
+              'div[class="o-ribbon-is-connected"]'
+            )
+            return true
           }
+          // return true
         }
         if (type === 'mailList') {
           this.log('debug', 'found credentials, trying to autoLog')
@@ -142,12 +153,6 @@ class OrangeContentScript extends ContentScript {
         await this.waitForUserAuthentication()
         return true
       }
-      await this.clickAndWait(
-        'a[class="btn btn-primary btn-inverse"]',
-        '#changeAccountLink'
-      )
-      await this.clickAndWait('#changeAccountLink', '#undefined-label')
-      await this.clickAndWait('#undefined-label', '#login')
       await this.waitForUserAuthentication()
       return true
     }
@@ -223,6 +228,7 @@ class OrangeContentScript extends ContentScript {
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
+    await this.runInWorker('checkInfosConfirmation')
     await this.waitForElementInWorker('a[class="ob1-link-icon ml-1 py-1"]')
     const clientRef = await this.runInWorker('findClientRef')
     if (clientRef) {
@@ -493,9 +499,7 @@ class OrangeContentScript extends ContentScript {
     )
     const mailList = document.querySelector('ul[data-testid="accounts-list"]')
     if (mail) {
-      const testEmail = mail.innerHTML
-        .replace('<strong>', '')
-        .replace('</strong>', '')
+      const testEmail = mail.textContent
       const type = 'mail'
       if (testEmail) {
         return { testEmail, type }
@@ -573,6 +577,20 @@ class OrangeContentScript extends ContentScript {
       return true
     }
   }
+
+  checkInfosConfirmation() {
+    const laterButton = document.querySelector('a[class="btn btn-secondary"]')
+    if (laterButton === null) {
+      return
+    }
+    const textInButton = laterButton.textContent
+    if (textInButton === 'Ignorer') {
+      laterButton.click()
+    } else {
+      this.log('warn', 'seems like infos confirmation page has changed')
+    }
+    return
+  }
 }
 
 const connector = new OrangeContentScript()
@@ -592,7 +610,8 @@ connector
       'waitForRecentPdfClicked',
       'waitForOldPdfClicked',
       'getStayLoggedButton',
-      'checkIfRemember'
+      'checkIfRemember',
+      'checkInfosConfirmation'
     ]
   })
   .catch(err => {
