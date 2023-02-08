@@ -93,7 +93,7 @@ class OrangeContentScript extends ContentScript {
       return true
     }
     if (credentials) {
-      log.debug('found credentials, processing')
+      this.log('debug', 'found credentials, processing')
       await this.waitForElementInWorker(
         'a[class="btn btn-primary btn-inverse"]'
       )
@@ -112,7 +112,7 @@ class OrangeContentScript extends ContentScript {
           }
         }
         if (type === 'mailList') {
-          log.debug('found credentials, trying to autoLog')
+          this.log('debug', 'found credentials, trying to autoLog')
           const mailSelector = `a[id="choose-account-${testEmail}"]`
           await this.runInWorker('click', mailSelector)
           await this.tryAutoLogin(credentials, 'half')
@@ -121,7 +121,7 @@ class OrangeContentScript extends ContentScript {
       }
 
       if (credentials.email != testEmail) {
-        log.debug('getting in different testEmail conditions')
+        this.log('debug', 'getting in different testEmail conditions')
         await this.clickAndWait('#changeAccountLink', '#undefined-label')
         await this.clickAndWait('#undefined-label', '#login')
         await this.tryAutoLogin(credentials, 'full')
@@ -129,7 +129,7 @@ class OrangeContentScript extends ContentScript {
       }
     }
     if (!credentials) {
-      log.debug('no credentials found, use normal user login')
+      this.log('debug', 'no credentials found, use normal user login')
       await this.waitForElementInWorker(
         'a[class="btn btn-primary btn-inverse"]'
       )
@@ -137,7 +137,7 @@ class OrangeContentScript extends ContentScript {
       await this.waitForElementInWorker('#o-ribbon')
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
-        log.debug('Already visited')
+        this.log('debug', 'Already visited')
         await this.clickAndWait('#undefined-label', '#login')
         await this.waitForUserAuthentication()
         return true
@@ -152,7 +152,7 @@ class OrangeContentScript extends ContentScript {
       return true
     }
 
-    log.debug('Not authenticated')
+    this.log('warn', 'Not authenticated')
     throw new Error('LOGIN_FAILED')
   }
 
@@ -165,7 +165,7 @@ class OrangeContentScript extends ContentScript {
       const userCredentials = await this.findAndSendCredentials.bind(this)(
         loginField
       )
-      this.log('Sending user credentials to Pilot')
+      this.log('debug', 'Sending user credentials to Pilot')
       this.sendToPilot({
         userCredentials
       })
@@ -176,32 +176,32 @@ class OrangeContentScript extends ContentScript {
       ) &&
       document.querySelector('[class="o-ribbon-is-connected"]')
     ) {
-      this.log('Check Authenticated succeeded')
+      this.log('info', 'Check Authenticated succeeded')
       return true
     }
     return false
   }
 
   async waitForUserAuthentication() {
-    log.debug('waitForUserAuthentication start')
+    this.log('debug', 'waitForUserAuthentication start')
     await this.setWorkerState({ visible: true, url: DEFAULT_PAGE_URL })
     await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
     await this.setWorkerState({ visible: false, url: DEFAULT_PAGE_URL })
   }
 
   async tryAutoLogin(credentials, type) {
-    this.log('Trying autologin')
+    this.log('info', 'Trying autologin')
     await this.goto(DEFAULT_PAGE_URL)
     await this.autoLogin(credentials, type)
   }
 
   async autoLogin(credentials, type) {
-    this.log('Autologin start')
+    this.log('info', 'Autologin start')
     const emailSelector = '#login'
     const passwordInputSelector = '#password'
     const loginButton = '#btnSubmit'
     if (type === 'half') {
-      this.log('wait for password field')
+      this.log('info', 'wait for password field')
       await this.waitForElementInWorker(passwordInputSelector)
       await this.runInWorker('fillingForm', credentials)
 
@@ -212,21 +212,21 @@ class OrangeContentScript extends ContentScript {
     await this.waitForElementInWorker(emailSelector)
     await this.runInWorker('fillingForm', credentials)
     await this.runInWorker('click', loginButton)
-    this.log('wait for password field')
+    this.log('info', 'wait for password field')
     await this.waitForElementInWorker(passwordInputSelector)
     await this.runInWorker('fillingForm', credentials)
     await this.runInWorker('click', loginButton)
   }
 
   async fetch(context) {
-    this.log('Starting fetch')
+    this.log('info', 'Starting fetch')
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
     await this.waitForElementInWorker('a[class="ob1-link-icon ml-1 py-1"]')
     const clientRef = await this.runInWorker('findClientRef')
     if (clientRef) {
-      this.log('clientRef found')
+      this.log('info', 'clientRef found')
       await this.clickAndWait(
         `a[href="facture-paiement/${clientRef}"]`,
         '[data-e2e="bp-tile-historic"]'
@@ -237,7 +237,7 @@ class OrangeContentScript extends ContentScript {
       )
       const redFrame = await this.runInWorker('checkRedFrame')
       if (redFrame !== null) {
-        this.log('Website did not load the bills')
+        this.log('warn', 'Website did not load the bills')
         throw new Error('VENDOR_DOWN')
       }
     }
@@ -263,7 +263,7 @@ class OrangeContentScript extends ContentScript {
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
     }
-    this.log('recentPdf loop ended')
+    this.log('info', 'recentPdf loop ended')
     for (let i = 0; i < oldPdfNumber; i++) {
       await this.runInWorker('waitForOldPdfClicked', i)
       await this.clickAndWait(
@@ -279,8 +279,7 @@ class OrangeContentScript extends ContentScript {
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
     }
-    this.log('oldPdf loop ended')
-    this.log('pdfButtons all clicked')
+    this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
     await this.runInWorker('processingBills')
     this.store.dataUri = []
     for (let i = 0; i < this.store.resolvedBase64.length; i++) {
@@ -334,16 +333,16 @@ class OrangeContentScript extends ContentScript {
   }
 
   findMoreBillsButton() {
-    this.log('Starting findMoreBillsButton')
+    this.log('info', 'Starting findMoreBillsButton')
     const button = Array.from(
       document.querySelector('[data-e2e="bh-more-bills"]')
     )
-    this.log('Exiting findMoreBillsButton')
+    this.log('info', 'Exiting findMoreBillsButton')
     return button
   }
 
   findPdfButtons() {
-    this.log('Starting findPdfButtons')
+    this.log('info', 'Starting findPdfButtons')
     const buttons = Array.from(
       document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
     )
@@ -351,13 +350,13 @@ class OrangeContentScript extends ContentScript {
   }
 
   findBillsHistoricButton() {
-    this.log('Starting findPdfButtons')
+    this.log('info', 'Starting findPdfButtons')
     const button = document.querySelector('[data-e2e="bp-tile-historic"]')
     return button
   }
 
   findPdfNumber() {
-    this.log('Starting findPdfNumber')
+    this.log('info', 'Starting findPdfNumber')
     const buttons = Array.from(
       document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
     )
@@ -365,7 +364,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   findStayLoggedButton() {
-    this.log('Starting findStayLoggedButton')
+    this.log('info', 'Starting findStayLoggedButton')
     const button = document.querySelector(
       '[data-oevent-label="bouton_rester_identifie"]'
     )
@@ -388,12 +387,12 @@ class OrangeContentScript extends ContentScript {
 
   async fillingForm(credentials) {
     if (document.querySelector('#login')) {
-      this.log('filling email field')
+      this.log('info', 'filling email field')
       document.querySelector('#login').value = credentials.email
       return
     }
     if (document.querySelector('#password')) {
-      this.log('filling password field')
+      this.log('info', 'filling password field')
       document.querySelector('#password').value = credentials.password
       return
     }
@@ -402,7 +401,7 @@ class OrangeContentScript extends ContentScript {
   async getUserDataFromWebsite() {
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
-      this.log("Couldn't get a sourceAccountIdentifier, using default")
+      this.log('warn', "Couldn't get a sourceAccountIdentifier, using default")
       return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
     }
     return {
@@ -420,11 +419,14 @@ class OrangeContentScript extends ContentScript {
       if (
         err.message === "Cannot read properties of null (reading 'innerHTML')"
       ) {
-        this.log(`Error message : ${err.message}, trying to reload page`)
+        this.log(
+          'warn',
+          `Error message : ${err.message}, trying to reload page`
+        )
         window.location.reload()
-        this.log('Profil homePage reloaded')
+        this.log('info', 'Profil homePage reloaded')
       } else {
-        this.log('Untreated problem encountered')
+        this.log('warn', 'Untreated problem encountered')
         return 'UNKNOWN_ERROR'
       }
     }
@@ -432,7 +434,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async findAndSendCredentials(loginField) {
-    this.log('getting in findAndSendCredentials')
+    this.log('info', 'getting in findAndSendCredentials')
     let userLogin = loginField.innerHTML
       .replace('<strong>', '')
       .replace('</strong>', '')
@@ -449,7 +451,7 @@ class OrangeContentScript extends ContentScript {
     let parsedElem
     let clientRef
     if (document.querySelector('a[class="ob1-link-icon ml-1 py-1"]')) {
-      this.log('clientRef founded')
+      this.log('info', 'clientRef founded')
       parsedElem = document
         .querySelectorAll('a[class="ob1-link-icon ml-1 py-1"]')[1]
         .getAttribute('href')
@@ -457,13 +459,13 @@ class OrangeContentScript extends ContentScript {
       const clientRefArray = parsedElem.match(/([0-9]*)/g)
 
       for (let i = 0; i < clientRefArray.length; i++) {
-        this.log('Get in clientRef loop')
+        this.log('info', 'Get in clientRef loop')
 
         const testedIndex = clientRefArray.pop()
         if (testedIndex.length === 0) {
-          this.log('No clientRef founded')
+          this.log('info', 'No clientRef founded')
         } else {
-          this.log('clientRef founded')
+          this.log('info', 'clientRef founded')
           clientRef = testedIndex
           break
         }
@@ -485,7 +487,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async getTestEmail() {
-    this.log('Getting in getTestEmail')
+    this.log('info', 'Getting in getTestEmail')
     const mail = document.querySelector(
       'p[data-testid="selected-account-login"]'
     )
@@ -512,31 +514,31 @@ class OrangeContentScript extends ContentScript {
   }
 
   async getMoreBillsButton() {
-    this.log('Getting in getMoreBillsButton')
+    this.log('info', 'Getting in getMoreBillsButton')
     let moreBillsButton = this.findMoreBillsButton()
     return moreBillsButton
   }
 
   async getPdfNumber() {
-    this.log('Getting in getPdfNumber')
+    this.log('info', 'Getting in getPdfNumber')
     let pdfNumber = this.findPdfNumber()
     return pdfNumber
   }
 
   async getStayLoggedButton() {
-    this.log('Starting getStayLoggedButton')
+    this.log('info', 'Starting getStayLoggedButton')
     const button = this.findStayLoggedButton()
     return button
   }
 
   async processingBills() {
     let resolvedBase64 = []
-    this.log('Awaiting promises')
+    this.log('info', 'Awaiting promises')
     const recentToBase64 = await Promise.all(
       recentPromisesToConvertBlobToBase64
     )
     const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
-    this.log('Processing promises')
+    this.log('info', 'Processing promises')
     const promisesToBase64 = recentToBase64.concat(oldToBase64)
     const xhrUrls = recentXhrUrls.concat(oldXhrUrls)
     for (let i = 0; i < promisesToBase64.length; i++) {
@@ -548,7 +550,7 @@ class OrangeContentScript extends ContentScript {
     const recentBillsToAdd = recentBills[0].billsHistory.billList
     const oldBillsToAdd = oldBills[0].oldBills
     let allBills = recentBillsToAdd.concat(oldBillsToAdd)
-    log.debug('billsArray ready, Sending to pilot')
+    this.log('debug', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
       city: userInfos[0].contracts[0].contractInstallationArea.city,
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
