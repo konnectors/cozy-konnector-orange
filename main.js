@@ -6442,6 +6442,7 @@ class OrangeContentScript extends cozy_clisk_contentscript__WEBPACK_IMPORTED_MOD
       const { testEmail, type } = await this.runInWorker('getTestEmail')
       if (credentials.email === testEmail) {
         if (type === 'mail') {
+          await this.waitForElementInWorker('#o-ribbon')
           await this.tryAutoLogin(credentials, 'half')
           await this.waitForElementInWorker('#o-ribbon-right')
           const stayLogButton = await this.runInWorker('getStayLoggedButton')
@@ -6457,7 +6458,6 @@ class OrangeContentScript extends cozy_clisk_contentscript__WEBPACK_IMPORTED_MOD
             )
             return true
           }
-          // return true
         }
         if (type === 'mailList') {
           this.log('debug', 'found credentials, trying to autoLog')
