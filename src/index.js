@@ -225,6 +225,9 @@ class OrangeContentScript extends ContentScript {
 
   async fetch(context) {
     this.log('info', 'Starting fetch')
+    if (this.store.userCredentials != undefined) {
+      await this.saveCredentials(this.store.userCredentials)
+    }
     await this.runInWorker('checkInfosConfirmation')
     await this.waitForElementInWorker('a[class="ob1-link-icon ml-1 py-1"]')
     const clientRef = await this.runInWorker('findClientRef')
@@ -321,9 +324,6 @@ class OrangeContentScript extends ContentScript {
           }
         }
       })
-    }
-    if (this.store.userCredentials != undefined) {
-      await this.saveCredentials(this.store.userCredentials)
     }
     await this.saveIdentity({
       mailAdress: this.store.infosIdentity.mail,
