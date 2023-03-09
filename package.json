@@ -1,7 +1,7 @@
 {
   "name": "orange",
   "version": "2.2.0",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "repository": {
     "type": "git",
     "url": "git@github.com:konnectors/cozy-konnector-orange.git"
