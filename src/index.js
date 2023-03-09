@@ -1,5 +1,5 @@
-import { ContentScript } from 'cozy-clisk/contentscript'
-import { blobToBase64 } from 'cozy-clisk/contentscript/utils'
+import { ContentScript } from 'cozy-clisk/dist/contentscript'
+import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import Minilog from '@cozy/minilog'
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
