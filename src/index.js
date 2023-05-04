@@ -7,6 +7,7 @@ Minilog.enable('orangeCCC')
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
 const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'orange'
+const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
 let recentBills = []
 let oldBills = []
@@ -85,12 +86,28 @@ window.XMLHttpRequest.prototype.open = function () {
 }
 
 class OrangeContentScript extends ContentScript {
+  async navigateToLoginForm() {
+    await this.goto(LOGIN_FORM_PAGE)
+    // Has the website has 2 steps for auth, reaching this page can lead on a full login (login+password)
+    // a half login (password) or if you already connected, a "stay connected" button.
+    // We are waiting for one of them to show
+    await Promise.race([
+      this.waitForElementInWorker('#login-label'),
+      this.waitForElementInWorker('#password-label'),
+      this.waitForElementInWorker(
+        'button[data-oevent-action="clic_rester_identifie"]'
+      )
+    ])
+  }
+
   async ensureAuthenticated() {
     await this.goto(DEFAULT_PAGE_URL)
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
     if (document.querySelector('div[class="o-ribbon-is-connected"]')) {
-      return true
+      await this.navigateToLoginForm()
+      await this.ensureNotAuthenticated()
+      // return true
     }
     if (credentials) {
       this.log('debug', 'found credentials, processing')
@@ -159,6 +176,24 @@ class OrangeContentScript extends ContentScript {
 
     this.log('warn', 'Not authenticated')
     throw new Error('LOGIN_FAILED')
+  }
+
+  async ensureNotAuthenticated() {
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      return true
+    }
+    if (
+      document.querySelector(
+        'button[data-oevent-action="clic_rester_identifie"]'
+      )
+    ) {
+      await this.runInWorker('click', '#changeAccountLink')
+      await this.waitForElementInWorker('#undefined-label')
+      await this.runInWorker('click', '#undefined-label')
+      await this.waitForElementInWorker('#login-label')
+    }
   }
 
   async checkAuthenticated() {
