@@ -215,12 +215,13 @@ class OrangeContentScript extends ContentScript {
         userCredentials
       })
     }
-    if (
-      document.location.href.includes(
-        'https://espace-client.orange.fr/accueil'
-      ) &&
-      document.querySelector('[class="o-ribbon-is-connected"]')
-    ) {
+    const isGoodUrl = document.location.href.includes(
+      'https://www.orange.fr/portail'
+    )
+    const isConnectedRibbonPresent = Boolean(
+      document.querySelector('.o-ribbon-is-connected')
+    )
+    if (isGoodUrl && isConnectedRibbonPresent) {
       this.log('info', 'Check Authenticated succeeded')
       return true
     }
@@ -656,7 +657,6 @@ connector
       'getMoreBillsButton',
       'checkOldBillsRedFrame',
       'processingBills',
-      'waitForUserAuthentication',
       'getTestEmail',
       'fillingForm',
       'getPdfNumber',
