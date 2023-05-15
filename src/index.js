@@ -87,6 +87,7 @@ window.XMLHttpRequest.prototype.open = function () {
 
 class OrangeContentScript extends ContentScript {
   async navigateToLoginForm() {
+    this.log('info', 'navigateToLoginForm starts')
     await this.goto(LOGIN_FORM_PAGE)
     // Has the website has 2 steps for auth, reaching this page can lead on a full login (login+password)
     // a half login (password) or if you already connected, a "stay connected" button.
@@ -101,7 +102,9 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureAuthenticated() {
-    await this.goto(DEFAULT_PAGE_URL)
+    this.log('info', 'ensureAuthenticated starts')
+    // await this.goto(DEFAULT_PAGE_URL)
+    await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
     if (document.querySelector('div[class="o-ribbon-is-connected"]')) {
@@ -158,14 +161,15 @@ class OrangeContentScript extends ContentScript {
     }
     if (!credentials) {
       this.log('debug', 'no credentials found, use normal user login')
-      await this.waitForElementInWorker(
-        'a[class="btn btn-primary btn-inverse"]'
-      )
-      await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
-      await this.waitForElementInWorker('#o-ribbon')
+      // await this.waitForElementInWorker(
+      //   'a[class="btn btn-primary btn-inverse"]'
+      // )
+      // await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
+      // await this.waitForElementInWorker('#o-ribbon')
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
         this.log('debug', 'Already visited')
+        await this.clickAndWait('#changeAccountLink', '#undefined-label')
         await this.clickAndWait('#undefined-label', '#login')
         await this.waitForUserAuthentication()
         return true
@@ -179,6 +183,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureNotAuthenticated() {
+    this.log('info', 'ensureNotAuthenticated starts')
     await this.navigateToLoginForm()
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (!authenticated) {
@@ -224,9 +229,17 @@ class OrangeContentScript extends ContentScript {
 
   async waitForUserAuthentication() {
     this.log('debug', 'waitForUserAuthentication start')
-    await this.setWorkerState({ visible: true, url: DEFAULT_PAGE_URL })
+    await this.setWorkerState({
+      visible: true,
+      url: LOGIN_FORM_PAGE
+    })
+    this.log('info', 'Before RIWUT')
     await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
-    await this.setWorkerState({ visible: false, url: DEFAULT_PAGE_URL })
+    this.log('info', 'After RIWUT')
+    await this.setWorkerState({
+      visible: false,
+      url: LOGIN_FORM_PAGE
+    })
   }
 
   async tryAutoLogin(credentials, type) {
@@ -603,14 +616,19 @@ class OrangeContentScript extends ContentScript {
   }
 
   checkIfRemember() {
+    this.log('info', 'checkIfRemember starts')
     const link = document.querySelector('#changeAccountLink')
     const button = document.querySelector('#undefined-label')
-    if (link) {
-      return false
-    }
-    if (button) {
+    if (link || button) {
+      this.log('info', 'returning true')
       return true
     }
+    // if (button) {
+    //   this.log('info', 'returning true')
+    //   return true
+    // }
+    this.log('info', 'returning false')
+    return false
   }
 
   checkInfosConfirmation() {
