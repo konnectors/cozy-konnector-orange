@@ -174,6 +174,15 @@ class OrangeContentScript extends ContentScript {
       // )
       // await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
       // await this.waitForElementInWorker('#o-ribbon')
+      const isAccountListPage = await this.runInWorker('checkAccountListPage')
+      if (isAccountListPage) {
+        this.log(
+          'debug',
+          'Webview on accountsList page, go to first login step'
+        )
+        await this.runInWorker('click', '#undefined-label')
+        await this.waitForElementInWorker('#login-label')
+      }
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
         this.log('debug', 'Already visited')
