@@ -91,14 +91,22 @@ class OrangeContentScript extends ContentScript {
     await this.goto(LOGIN_FORM_PAGE)
     // Has the website has 2 steps for auth, reaching this page can lead on a full login (login+password)
     // a half login (password) or if you already connected, a "stay connected" button.
+    // It can also lead to a captcha page.
     // We are waiting for one of them to show
     await Promise.race([
       this.waitForElementInWorker('#login-label'),
       this.waitForElementInWorker('#password-label'),
-      this.waitForElementInWorker(
-        'button[data-oevent-action="clic_rester_identifie"]'
-      )
+      this.waitForElementInWorker('#oecs__connecte-se-deconnecter'),
+      this.waitForElementInWorker('div[class*="captcha_responseContainer"]'),
+      this.waitForElementInWorker('#undefined-label')
     ])
+    const { askForCaptcha, captchaUrl } = await this.runInWorker(
+      'checkForCaptcha'
+    )
+    if (askForCaptcha) {
+      this.log('debug', 'captcha found, waiting for resolution')
+      await this.waitForUserAction(captchaUrl)
+    }
   }
 
   async ensureAuthenticated() {
@@ -453,6 +461,12 @@ class OrangeContentScript extends ContentScript {
     }
   }
 
+  async waitForUserAction(url) {
+    this.log('info', 'waitForUserAction start')
+    await this.setWorkerState({ visible: true, url })
+    await this.runInWorkerUntilTrue({ method: 'waitForCaptchaResolution' })
+    await this.setWorkerState({ visible: false, url })
+  }
   async getUserDataFromWebsite() {
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
@@ -644,6 +658,26 @@ class OrangeContentScript extends ContentScript {
       this.log('warn', 'seems like infos confirmation page has changed')
     }
     return
+  }
+  checkForCaptcha() {
+    const captchaContainer = document.querySelector(
+      'div[class*="captcha_responseContainer"]'
+    )
+    let captchaHref = document.location.href
+    if (captchaContainer) {
+      return { askForCaptcha: true, captchaHref }
+    }
+    return false
+  }
+
+  async waitForCaptchaResolution() {
+    const passwordInput = document.querySelector('#password')
+    const loginInput = document.querySelector('#login')
+    const otherAccountButton = document.querySelector('#undefined-label')
+    if (passwordInput || loginInput || otherAccountButton) {
+      return true
+    }
+    return false
   }
 }
 
