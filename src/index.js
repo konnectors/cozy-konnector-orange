@@ -285,6 +285,13 @@ class OrangeContentScript extends ContentScript {
     }
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
+    await Promise.race([
+      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
+      this.waitForElementInWorker('.alert-icon icon-error-severe'),
+      this.waitForElementInWorker(
+        '.alert-container alert-container-sm alert-danger mb-0'
+      )
+    ])
     const redFrame = await this.runInWorker('checkRedFrame')
     if (redFrame !== null) {
       this.log('warn', 'Website did not load the bills')
@@ -513,14 +520,12 @@ class OrangeContentScript extends ContentScript {
 
   async checkRedFrame() {
     const redFrame = document.querySelector('.alert-icon icon-error-severe')
-    return redFrame
-  }
-
-  async checkOldBillsRedFrame() {
-    const redFrame = document.querySelector(
+    const oldBillsRedFrame = document.querySelector(
       '.alert-container alert-container-sm alert-danger mb-0'
     )
-    return redFrame
+    if (redFrame) return redFrame
+    if (oldBillsRedFrame) return oldBillsRedFrame
+    return null
   }
 
   async getTestEmail() {
@@ -673,7 +678,6 @@ connector
       'getUserMail',
       'checkRedFrame',
       'getMoreBillsButton',
-      'checkOldBillsRedFrame',
       'processingBills',
       'getTestEmail',
       'fillingForm',
