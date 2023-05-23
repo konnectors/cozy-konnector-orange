@@ -278,7 +278,9 @@ class OrangeContentScript extends ContentScript {
     await this.runInWorker('checkInfosConfirmation')
     await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
     await this.clickAndWait(`a[href="${DEFAULT_PAGE_URL}"`, 'strong')
-    const billsPage = await this.runInWorker('checkBillsElement')
+    const billsPage = await this.runInWorkerUntilTrue({
+      method: 'checkBillsElement'
+    })
     if (!billsPage) {
       this.log('warn', 'Cannot find a path to the bills page')
       throw new Error('Cannot find a path to bill Page, aborting execution')
