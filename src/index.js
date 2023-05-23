@@ -307,15 +307,33 @@ class OrangeContentScript extends ContentScript {
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
     for (let i = 0; i < recentPdfNumber; i++) {
+      this.log('info', `Before clicking ${i} recent pdf`)
       await this.runInWorker('waitForRecentPdfClicked', i)
+      let redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      this.log('info', `After clicking ${i} recent pdf`)
       await this.clickAndWait(
         'a[class="h1 menu-subtitle mb-0 pb-1"]',
         '[data-e2e="bp-tile-historic"]'
       )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      this.log('info', `Back to bill list ${i} recent pdf`)
       await this.clickAndWait(
         '[data-e2e="bp-tile-historic"]',
         '[aria-labelledby="bp-billsHistoryTitle"]'
       )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
       await this.clickAndWait(
         '[data-e2e="bh-more-bills"]',
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
@@ -323,15 +341,33 @@ class OrangeContentScript extends ContentScript {
     }
     this.log('info', 'recentPdf loop ended')
     for (let i = 0; i < oldPdfNumber; i++) {
+      this.log('info', `Before clicking ${i} old pdf`)
       await this.runInWorker('waitForOldPdfClicked', i)
+      let redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      this.log('info', `After clicking ${i} old pdf`)
       await this.clickAndWait(
         'a[class="h1 menu-subtitle mb-0 pb-1"]',
         '[data-e2e="bp-tile-historic"]'
       )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      this.log('info', `Back to bill list ${i} old pdf`)
       await this.clickAndWait(
         '[data-e2e="bp-tile-historic"]',
         '[aria-labelledby="bp-billsHistoryTitle"]'
       )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
       await this.clickAndWait(
         '[data-e2e="bh-more-bills"]',
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
