@@ -5038,6 +5038,7 @@ _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default().enable('orangeCCC')
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
 const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'orange'
+const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
 let recentBills = []
 let oldBills = []
@@ -5116,23 +5117,41 @@ window.XMLHttpRequest.prototype.open = function () {
 }
 
 class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__.ContentScript {
+  async navigateToLoginForm() {
+    this.log('info', 'navigateToLoginForm starts')
+    await this.goto(LOGIN_FORM_PAGE)
+    // Has the website has 2 steps for auth, reaching this page can lead on a full login (login+password)
+    // a half login (password) or if you already connected, a "stay connected" button.
+    // It can also lead to a captcha page.
+    // We are waiting for one of them to show
+    await Promise.race([
+      this.waitForElementInWorker('#login-label'),
+      this.waitForElementInWorker('#password-label'),
+      this.waitForElementInWorker('#oecs__connecte-se-deconnecter'),
+      this.waitForElementInWorker('div[class*="captcha_responseContainer"]'),
+      this.waitForElementInWorker('#undefined-label')
+    ])
+    const { askForCaptcha, captchaUrl } = await this.runInWorker(
+      'checkForCaptcha'
+    )
+    if (askForCaptcha) {
+      this.log('debug', 'captcha found, waiting for resolution')
+      await this.waitForUserAction(captchaUrl)
+    }
+  }
+
   async ensureAuthenticated() {
-    await this.goto(DEFAULT_PAGE_URL)
+    this.log('info', 'ensureAuthenticated starts')
+    await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
-    if (document.querySelector('div[class="o-ribbon-is-connected"]')) {
-      return true
-    }
     if (credentials) {
       this.log('debug', 'found credentials, processing')
-      await this.waitForElementInWorker(
-        'a[class="btn btn-primary btn-inverse"]'
-      )
-      await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
       await this.waitForElementInWorker('#o-ribbon')
-      await this.waitForElementInWorker(
-        'p[data-testid="selected-account-login"]'
-      )
+      await Promise.race([
+        this.waitForElementInWorker('p[data-testid="selected-account-login"]'),
+        this.waitForElementInWorker('#undefined-label')
+      ])
       const { testEmail, type } = await this.runInWorker('getTestEmail')
       if (credentials.email === testEmail) {
         if (type === 'mail') {
@@ -5172,17 +5191,22 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     if (!credentials) {
       this.log('debug', 'no credentials found, use normal user login')
-      await this.waitForElementInWorker(
-        'a[class="btn btn-primary btn-inverse"]'
-      )
-      await this.runInWorker('click', 'a[class="btn btn-primary btn-inverse"]')
-      await this.waitForElementInWorker('#o-ribbon')
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
         this.log('debug', 'Already visited')
+        await this.clickAndWait('#changeAccountLink', '#undefined-label')
         await this.clickAndWait('#undefined-label', '#login')
         await this.waitForUserAuthentication()
         return true
+      }
+      const isAccountListPage = await this.runInWorker('checkAccountListPage')
+      if (isAccountListPage) {
+        this.log(
+          'debug',
+          'Webview on accountsList page, go to first login step'
+        )
+        await this.runInWorker('click', '#undefined-label')
+        await this.waitForElementInWorker('#login-label')
       }
       await this.waitForUserAuthentication()
       return true
@@ -5190,6 +5214,25 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
     this.log('warn', 'Not authenticated')
     throw new Error('LOGIN_FAILED')
+  }
+
+  async ensureNotAuthenticated() {
+    this.log('info', 'ensureNotAuthenticated starts')
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      return true
+    }
+    if (
+      document.querySelector(
+        'button[data-oevent-action="clic_rester_identifie"]'
+      )
+    ) {
+      await this.runInWorker('click', '#changeAccountLink')
+      await this.waitForElementInWorker('#undefined-label')
+      await this.runInWorker('click', '#undefined-label')
+      await this.waitForElementInWorker('#login-label')
+    }
   }
 
   async checkAuthenticated() {
@@ -5206,12 +5249,13 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         userCredentials
       })
     }
-    if (
-      document.location.href.includes(
-        'https://espace-client.orange.fr/accueil'
-      ) &&
-      document.querySelector('[class="o-ribbon-is-connected"]')
-    ) {
+    const isGoodUrl = document.location.href.includes(
+      'https://www.orange.fr/portail'
+    )
+    const isConnectedRibbonPresent = Boolean(
+      document.querySelector('.o-ribbon-is-connected')
+    )
+    if (isGoodUrl && isConnectedRibbonPresent) {
       this.log('info', 'Check Authenticated succeeded')
       return true
     }
@@ -5220,14 +5264,17 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async waitForUserAuthentication() {
     this.log('debug', 'waitForUserAuthentication start')
-    await this.setWorkerState({ visible: true, url: DEFAULT_PAGE_URL })
+    await this.setWorkerState({
+      visible: true
+    })
     await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
-    await this.setWorkerState({ visible: false, url: DEFAULT_PAGE_URL })
+    await this.setWorkerState({
+      visible: false
+    })
   }
 
   async tryAutoLogin(credentials, type) {
     this.log('info', 'Trying autologin')
-    await this.goto(DEFAULT_PAGE_URL)
     await this.autoLogin(credentials, type)
   }
 
@@ -5260,23 +5307,26 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       await this.saveCredentials(this.store.userCredentials)
     }
     await this.runInWorker('checkInfosConfirmation')
-    await this.waitForElementInWorker('a[class="ob1-link-icon ml-1 py-1"]')
-    const clientRef = await this.runInWorker('findClientRef')
-    if (clientRef) {
-      this.log('info', 'clientRef found')
-      await this.clickAndWait(
-        `a[href="facture-paiement/${clientRef}"]`,
-        '[data-e2e="bp-tile-historic"]'
+    await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
+    await this.clickAndWait(`a[href="${DEFAULT_PAGE_URL}"`, 'strong')
+    const billsPage = await this.runInWorker('checkBillsElement')
+    if (!billsPage) {
+      this.log('warn', 'Cannot find a path to the bills page')
+      throw new Error('Cannot find a path to bill Page, aborting execution')
+    }
+    await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
+    await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
+    await Promise.race([
+      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
+      this.waitForElementInWorker('.alert-icon icon-error-severe'),
+      this.waitForElementInWorker(
+        '.alert-container alert-container-sm alert-danger mb-0'
       )
-      await this.clickAndWait(
-        '[data-e2e="bp-tile-historic"]',
-        '[aria-labelledby="bp-billsHistoryTitle"]'
-      )
-      const redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
+    ])
+    const redFrame = await this.runInWorker('checkRedFrame')
+    if (redFrame !== null) {
+      this.log('warn', 'Website did not load the bills')
+      throw new Error('VENDOR_DOWN')
     }
     let recentPdfNumber = await this.runInWorker('getPdfNumber')
     await this.clickAndWait(
@@ -5328,7 +5378,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         return bill.date === dateArray[0]
       })
       this.store.dataUri.push({
-        vendor: 'sosh.fr',
+        vendor: 'orange.fr',
         date: this.store.allBills[index].date,
         amount: this.store.allBills[index].amount / 100,
         recurrence: 'monthly',
@@ -5367,6 +5417,14 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       contentType: 'application/pdf',
       qualificationLabel: 'isp_invoice'
     })
+    await this.clickAndWait(
+      '#o-identityLink',
+      'a[data-oevent-action="sedeconnecter"]'
+    )
+    await this.clickAndWait(
+      'a[data-oevent-action="sedeconnecter"]',
+      'a[data-oevent-action="identifiez-vous"]'
+    )
   }
 
   findMoreBillsButton() {
@@ -5374,7 +5432,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const button = Array.from(
       document.querySelector('[data-e2e="bh-more-bills"]')
     )
-    this.log('info', 'Exiting findMoreBillsButton')
     return button
   }
 
@@ -5435,7 +5492,15 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
   }
 
+  async waitForUserAction(url) {
+    this.log('info', 'waitForUserAction start')
+    await this.setWorkerState({ visible: true, url })
+    await this.runInWorkerUntilTrue({ method: 'waitForCaptchaResolution' })
+    await this.setWorkerState({ visible: false, url })
+  }
+
   async getUserDataFromWebsite() {
+    await this.waitForElementInWorker('.o-identityLayer-detail')
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
       this.log('warn', "Couldn't get a sourceAccountIdentifier, using default")
@@ -5484,43 +5549,14 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return userCredentials
   }
 
-  async findClientRef() {
-    let parsedElem
-    let clientRef
-    if (document.querySelector('a[class="ob1-link-icon ml-1 py-1"]')) {
-      this.log('info', 'clientRef founded')
-      parsedElem = document
-        .querySelectorAll('a[class="ob1-link-icon ml-1 py-1"]')[1]
-        .getAttribute('href')
-
-      const clientRefArray = parsedElem.match(/([0-9]*)/g)
-
-      for (let i = 0; i < clientRefArray.length; i++) {
-        this.log('info', 'Get in clientRef loop')
-
-        const testedIndex = clientRefArray.pop()
-        if (testedIndex.length === 0) {
-          this.log('info', 'No clientRef founded')
-        } else {
-          this.log('info', 'clientRef founded')
-          clientRef = testedIndex
-          break
-        }
-      }
-      return clientRef
-    }
-  }
-
   async checkRedFrame() {
     const redFrame = document.querySelector('.alert-icon icon-error-severe')
-    return redFrame
-  }
-
-  async checkOldBillsRedFrame() {
-    const redFrame = document.querySelector(
+    const oldBillsRedFrame = document.querySelector(
       '.alert-container alert-container-sm alert-danger mb-0'
     )
-    return redFrame
+    if (redFrame) return redFrame
+    if (oldBillsRedFrame) return oldBillsRedFrame
+    return null
   }
 
   async getTestEmail() {
@@ -5599,14 +5635,14 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   checkIfRemember() {
+    this.log('info', 'checkIfRemember starts')
     const link = document.querySelector('#changeAccountLink')
-    const button = document.querySelector('#undefined-label')
     if (link) {
-      return false
-    }
-    if (button) {
+      this.log('info', 'returning true')
       return true
     }
+    this.log('info', 'returning false')
+    return false
   }
 
   checkInfosConfirmation() {
@@ -5622,6 +5658,48 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     return
   }
+
+  checkForCaptcha() {
+    const captchaContainer = document.querySelector(
+      'div[class*="captcha_responseContainer"]'
+    )
+    let captchaHref = document.location.href
+    if (captchaContainer) {
+      return { askForCaptcha: true, captchaHref }
+    }
+    return false
+  }
+
+  async waitForCaptchaResolution() {
+    const passwordInput = document.querySelector('#password')
+    const loginInput = document.querySelector('#login')
+    const otherAccountButton = document.querySelector('#undefined-label')
+    if (passwordInput || loginInput || otherAccountButton) {
+      return true
+    }
+    return false
+  }
+
+  async checkAccountListPage() {
+    const isAccountListPage = Boolean(
+      document.querySelector('#undefined-label')
+    )
+    if (isAccountListPage) return true
+    return false
+  }
+
+  async checkBillsElement() {
+    this.log('info', 'checkBillsElement starts')
+    const strongElements = document.querySelectorAll('strong')
+    for (const element of strongElements) {
+      if (element.textContent === 'Factures et paiements') {
+        this.log('info', '"Factures et paiements" found, clicking it')
+        element.click()
+        return true
+      }
+    }
+    return false
+  }
 }
 
 const connector = new OrangeContentScript()
@@ -5629,12 +5707,9 @@ connector
   .init({
     additionalExposedMethodsNames: [
       'getUserMail',
-      'findClientRef',
       'checkRedFrame',
       'getMoreBillsButton',
-      'checkOldBillsRedFrame',
       'processingBills',
-      'waitForUserAuthentication',
       'getTestEmail',
       'fillingForm',
       'getPdfNumber',
@@ -5642,7 +5717,11 @@ connector
       'waitForOldPdfClicked',
       'getStayLoggedButton',
       'checkIfRemember',
-      'checkInfosConfirmation'
+      'checkInfosConfirmation',
+      'checkForCaptcha',
+      'waitForCaptchaResolution',
+      'checkAccountListPage',
+      'checkBillsElement'
     ]
   })
   .catch(err => {
