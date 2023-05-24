@@ -5183,7 +5183,21 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
       if (credentials.email != testEmail) {
         this.log('debug', 'getting in different testEmail conditions')
-        await this.clickAndWait('#changeAccountLink', '#undefined-label')
+        const isChangeAccountPresent = await this.runInWorker(
+          'isElementPresent',
+          '#changeAccountLink'
+        )
+        const isUndefinedPresent = await this.runInWorker(
+          'isElementPresent',
+          '#undefined-label'
+        )
+        if (isChangeAccountPresent) {
+          await this.clickAndWait('#changeAccountLink', '#undefined-label')
+        } else if (!isUndefinedPresent) {
+          throw new Error(
+            'Unexpected case where neither changeaccount link or undefined account link are presents'
+          )
+        }
         await this.clickAndWait('#undefined-label', '#login')
         await this.tryAutoLogin(credentials, 'full')
         return true
@@ -5697,6 +5711,10 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return
   }
 
+  isElementPresent(selector) {
+    return Boolean(document.querySelector(selector))
+  }
+
   checkForCaptcha() {
     const captchaContainer = document.querySelector(
       'div[class*="captcha_responseContainer"]'
@@ -5757,6 +5775,7 @@ connector
       'checkIfRemember',
       'checkInfosConfirmation',
       'checkForCaptcha',
+      'isElementPresent',
       'waitForCaptchaResolution',
       'checkAccountListPage',
       'checkBillsElement'
