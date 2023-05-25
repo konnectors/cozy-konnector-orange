@@ -648,6 +648,12 @@ class OrangeContentScript extends ContentScript {
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
+    // City is not always given, depending of the user and if it's an internet or mobile subscription.
+    let city
+    if (userInfos[0].contracts[0].contractInstallationArea) {
+      city = userInfos[0].contracts[0].contractInstallationArea.city
+      infosIdentity.city = city
+    }
     await this.sendToPilot({
       resolvedBase64,
       allBills,
