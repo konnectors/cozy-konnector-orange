@@ -417,7 +417,7 @@ class OrangeContentScript extends ContentScript {
             invoiceNumber: this.store.allBills[index].id
               ? this.store.allBills[index].id
               : this.store.allBills[index].tecId,
-            contentAuthor: 'sosh',
+            contentAuthor: 'orange',
             datetime: this.store.allBills[index].date,
             datetimeLabel: 'startDate',
             isSubscription: true,
