@@ -314,21 +314,22 @@ class OrangeContentScript extends ContentScript {
       throw new Error('VENDOR_DOWN')
     }
     let recentPdfNumber = await this.runInWorker('getPdfNumber')
-    await this.clickAndWait(
-      '[data-e2e="bh-more-bills"]',
-      '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-    )
+    const hasMoreBills = await this.runInWorker('getMoreBillsButton')
+    if (hasMoreBills) {
+      await this.clickAndWait(
+        '[data-e2e="bh-more-bills"]',
+        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
+      )
+    }
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
     for (let i = 0; i < recentPdfNumber; i++) {
-      this.log('info', `Before clicking ${i} recent pdf`)
       await this.runInWorker('waitForRecentPdfClicked', i)
       let redFrame = await this.runInWorker('checkRedFrame')
       if (redFrame !== null) {
         this.log('warn', 'Website did not load the bills')
         throw new Error('VENDOR_DOWN')
       }
-      this.log('info', `After clicking ${i} recent pdf`)
       await this.clickAndWait(
         'a[class="h1 menu-subtitle mb-0 pb-1"]',
         '[data-e2e="bp-tile-historic"]'
@@ -354,40 +355,39 @@ class OrangeContentScript extends ContentScript {
       )
     }
     this.log('info', 'recentPdf loop ended')
-    for (let i = 0; i < oldPdfNumber; i++) {
-      this.log('info', `Before clicking ${i} old pdf`)
-      await this.runInWorker('waitForOldPdfClicked', i)
-      let redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
+    if (oldPdfNumber != 0) {
+      for (let i = 0; i < oldPdfNumber; i++) {
+        await this.runInWorker('waitForOldPdfClicked', i)
+        let redFrame = await this.runInWorker('checkRedFrame')
+        if (redFrame !== null) {
+          this.log('warn', 'Website did not load the bills')
+          throw new Error('VENDOR_DOWN')
+        }
+        await this.clickAndWait(
+          'a[class="h1 menu-subtitle mb-0 pb-1"]',
+          '[data-e2e="bp-tile-historic"]'
+        )
+        redFrame = await this.runInWorker('checkRedFrame')
+        if (redFrame !== null) {
+          this.log('warn', 'Website did not load the bills')
+          throw new Error('VENDOR_DOWN')
+        }
+        await this.clickAndWait(
+          '[data-e2e="bp-tile-historic"]',
+          '[aria-labelledby="bp-billsHistoryTitle"]'
+        )
+        redFrame = await this.runInWorker('checkRedFrame')
+        if (redFrame !== null) {
+          this.log('warn', 'Website did not load the bills')
+          throw new Error('VENDOR_DOWN')
+        }
+        await this.clickAndWait(
+          '[data-e2e="bh-more-bills"]',
+          '[aria-labelledby="bp-historicBillsHistoryTitle"]'
+        )
       }
-      this.log('info', `After clicking ${i} old pdf`)
-      await this.clickAndWait(
-        'a[class="h1 menu-subtitle mb-0 pb-1"]',
-        '[data-e2e="bp-tile-historic"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      this.log('info', `Back to bill list ${i} old pdf`)
-      await this.clickAndWait(
-        '[data-e2e="bp-tile-historic"]',
-        '[aria-labelledby="bp-billsHistoryTitle"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-      )
+      this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
     }
-    this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
     await this.runInWorker('processingBills')
     this.store.dataUri = []
     for (let i = 0; i < this.store.resolvedBase64.length; i++) {
@@ -450,10 +450,9 @@ class OrangeContentScript extends ContentScript {
 
   findMoreBillsButton() {
     this.log('info', 'Starting findMoreBillsButton')
-    const button = Array.from(
-      document.querySelector('[data-e2e="bh-more-bills"]')
-    )
-    return button
+    const button = document.querySelector('[data-e2e="bh-more-bills"]')
+    if (button) return true
+    else return false
   }
 
   findPdfButtons() {
@@ -644,7 +643,6 @@ class OrangeContentScript extends ContentScript {
     let allBills = recentBillsToAdd.concat(oldBillsToAdd)
     this.log('debug', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
-      city: userInfos[0].contracts[0].contractInstallationArea.city,
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
