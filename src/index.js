@@ -429,7 +429,12 @@ class OrangeContentScript extends ContentScript {
     }
     await this.saveIdentity({
       mailAdress: this.store.infosIdentity.mail,
-      city: this.store.infosIdentity.city,
+      // As we're not sure city is present for the running account, we check if it existe in infosIdentity.
+      // If it does, then we spread the object containing city, if not, we spread an empty object
+      // Resulting in "city" not present in the final identity
+      ...(this.store.infosIdentity.city
+        ? { city: this.store.infosIdentity.city }
+        : {}),
       phoneNumber: this.store.infosIdentity.phoneNumber
     })
     await this.saveBills(this.store.dataUri, {
