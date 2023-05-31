@@ -84,5 +84,26 @@ export default class XhrInterceptor {
       }
       return proxied.apply(this, [].slice.call(arguments))
     }
+
+    // Intercepting more infos for Identity object
+    if (arguments[1].includes('ecd_wp/account/identification')) {
+      self.originalResponse.addEventListener('readystatechange', function () {
+        if (self.originalResponse.readyState === 4) {
+          const jsonInfos = JSON.parse(self.originalResponse.responseText)
+          self.userInfos.push(jsonInfos)
+        }
+      })
+      return proxied.apply(this, [].slice.call(arguments))
+    }
+    // Intercepting billingAddress infos for Identity object
+    if (arguments[1].includes('ecd_wp/account/billingAddresses')) {
+      self.originalResponse.addEventListener('readystatechange', function () {
+        if (self.originalResponse.readyState === 4) {
+          const jsonInfos = JSON.parse(self.originalResponse.responseText)
+          self.userInfos.push(jsonInfos)
+        }
+      })
+      return proxied.apply(this, [].slice.call(arguments))
+    }
   }
 }

@@ -170,7 +170,6 @@ class OrangeContentScript extends ContentScript {
       this.log('warn', 'Cannot find a path to the bills page')
       throw new Error('Cannot find a path to bill Page, aborting execution')
     }
-    this.log('info', ``)
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
     await Promise.race([
@@ -201,16 +200,11 @@ class OrangeContentScript extends ContentScript {
       await this.convertOldsToCozyBills(context, oldPdfNumber)
       this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
     }
-    await this.saveIdentity({
-      mailAdress: this.store.infosIdentity.mail,
-      // As we're not sure city is present for the running account, we check if it existe in infosIdentity.
-      // If it does, then we spread the object containing city, if not, we spread an empty object
-      // Resulting in "city" not present in the final identity
-      ...(this.store.infosIdentity.city
-        ? { city: this.store.infosIdentity.city }
-        : {}),
-      phoneNumber: this.store.infosIdentity.phoneNumber
-    })
+
+    await this.navigateToPersonalInfos()
+    await this.runInWorker('getIdentity')
+    await this.saveIdentity(this.store.infosIdentity)
+
     await this.clickAndWait(
       '#o-identityLink',
       'a[data-oevent-action="sedeconnecter"]'
@@ -224,6 +218,62 @@ class OrangeContentScript extends ContentScript {
       log('error', 'Not completly disconnected, never found the second link')
       throw e
     }
+  }
+
+  async navigateToPersonalInfos() {
+    this.log('info', 'navigateToPersonalInfos starts')
+    await this.clickAndWait(
+      '#o-identityLink',
+      'a[data-oevent-action="gerervotrecompte"]'
+    )
+    await this.clickAndWait(
+      'a[data-oevent-action="gerervotrecompte"]',
+      'a[href="/compte/infos-perso"]'
+    )
+    await this.runInWorker('click', 'a[href="/compte/infos-perso"]')
+    await Promise.all([
+      this.waitForElementInWorker('a[href="/compte/etat-civil"]'),
+      this.waitForElementInWorker(
+        'a[href="/compte/modification-moyens-contact"]'
+      ),
+      this.waitForElementInWorker('a[href="/compte/adresse"]')
+    ])
+  }
+
+  async getIdentity() {
+    this.log('info', 'getIdentity starts')
+    const addressInfos = interceptor.userInfos[2][0]
+    const phoneNumber = interceptor.userInfos[0].contracts[0].telco.publicNumber
+    const houseNumber = addressInfos.postalAddress.streetNumber.number
+    const street = `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`
+    const postCode = addressInfos.postalAddress.postalCode
+    const city = addressInfos.postalAddress.cityName
+    const formattedAddress = `${houseNumber} ${street} ${postCode} ${city}`
+    const infosIdentity = {
+      name: {
+        givenName: interceptor.userInfos[0].contracts[0].holder.firstName,
+        lastName: interceptor.userInfos[0].contracts[0].holder.lastName
+      },
+      phone: [
+        {
+          type: phoneNumber.match(/^06|07|\+336|\+337/g) ? 'mobile' : 'home',
+          number: phoneNumber
+        }
+      ],
+      mail: interceptor.userInfos[1].contactInformation.email.address,
+      address: [
+        {
+          formattedAddress,
+          houseNumber,
+          street,
+          postCode,
+          city
+        }
+      ]
+    }
+    await this.sendToPilot({
+      infosIdentity
+    })
   }
 
   async convertRecentsToCozyBills(context, recentPdfNumber) {
@@ -577,21 +627,10 @@ class OrangeContentScript extends ContentScript {
       })
     }
     const recentBillsToAdd = interceptor.recentBills[0].billsHistory.billList
-    this.log('info', 'billsArray ready, Sending to pilot')
-    const infosIdentity = {
-      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
-      mail: document.querySelector('.o-identityLayer-detail').innerHTML
-    }
-    // City is not always given, depending of the user and if it's an internet or mobile subscription.
-    let city
-    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
-      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
-      infosIdentity.city = city
-    }
+    this.log('debug', 'billsArray ready, Sending to pilot')
     await this.sendToPilot({
       resolvedBase64,
-      recentBillsToAdd,
-      infosIdentity
+      recentBillsToAdd
     })
     resolvedBase64 = []
   }
@@ -610,21 +649,10 @@ class OrangeContentScript extends ContentScript {
       })
     }
     const oldBillsToAdd = interceptor.oldBills[0].oldBills
-    this.log('info', 'billsArray ready, Sending to pilot')
-    const infosIdentity = {
-      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
-      mail: document.querySelector('.o-identityLayer-detail').innerHTML
-    }
-    // City is not always given, depending of the user and if it's an internet or mobile subscription.
-    let city
-    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
-      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
-      infosIdentity.city = city
-    }
+    this.log('debug', 'billsArray ready, Sending to pilot')
     await this.sendToPilot({
       resolvedBase64,
-      oldBillsToAdd,
-      infosIdentity
+      oldBillsToAdd
     })
     resolvedBase64 = []
   }
@@ -759,13 +787,6 @@ connector
   .catch(err => {
     log('warn', err)
   })
-
-// Used for debug purposes only
-// function sleep(delay) {
-//   return new Promise(resolve => {
-//     setTimeout(resolve, delay * 1000)
-//   })
-// }
 
 async function hashVendorRef(vendorRef) {
   const msgUint8 = new window.TextEncoder().encode(vendorRef) // encode as (utf-8) Uint8Array
