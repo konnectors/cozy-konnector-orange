@@ -58,6 +58,8 @@ window.XMLHttpRequest.prototype.open = function () {
   if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
+        recentPromisesToConvertBlobToBase64 = []
+        recentXhrUrls = []
         // Pushing in an array the converted to base64 blob and pushing in another array it's href to match the indexes.
         recentPromisesToConvertBlobToBase64.push(
           blobToBase64(originalResponse.response)
@@ -73,6 +75,8 @@ window.XMLHttpRequest.prototype.open = function () {
   if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
+        oldPromisesToConvertBlobToBase64 = []
+        oldXhrUrls = []
         oldPromisesToConvertBlobToBase64.push(
           blobToBase64(originalResponse.response)
         )
@@ -323,6 +327,33 @@ class OrangeContentScript extends ContentScript {
     }
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
+    await this.convertRecentsToCozyBills(context, recentPdfNumber)
+    this.log('info', 'recentPdf loop ended')
+    if (oldPdfNumber != 0) {
+      await this.convertOldsToCozyBills(context, oldPdfNumber)
+      this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
+    }
+    await this.saveIdentity({
+      mailAdress: this.store.infosIdentity.mail,
+      // As we're not sure city is present for the running account, we check if it existe in infosIdentity.
+      // If it does, then we spread the object containing city, if not, we spread an empty object
+      // Resulting in "city" not present in the final identity
+      ...(this.store.infosIdentity.city
+        ? { city: this.store.infosIdentity.city }
+        : {}),
+      phoneNumber: this.store.infosIdentity.phoneNumber
+    })
+    await this.clickAndWait(
+      '#o-identityLink',
+      'a[data-oevent-action="sedeconnecter"]'
+    )
+    await this.clickAndWait(
+      'a[data-oevent-action="sedeconnecter"]',
+      'a[data-oevent-action="identifiez-vous"]'
+    )
+  }
+
+  async convertRecentsToCozyBills(context, recentPdfNumber) {
     for (let i = 0; i < recentPdfNumber; i++) {
       await this.runInWorker('waitForRecentPdfClicked', i)
       let redFrame = await this.runInWorker('checkRedFrame')
@@ -339,7 +370,6 @@ class OrangeContentScript extends ContentScript {
         this.log('warn', 'Website did not load the bills')
         throw new Error('VENDOR_DOWN')
       }
-      this.log('info', `Back to bill list ${i} recent pdf`)
       await this.clickAndWait(
         '[data-e2e="bp-tile-historic"]',
         '[aria-labelledby="bp-billsHistoryTitle"]'
@@ -353,99 +383,132 @@ class OrangeContentScript extends ContentScript {
         '[data-e2e="bh-more-bills"]',
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
-    }
-    this.log('info', 'recentPdf loop ended')
-    if (oldPdfNumber != 0) {
-      for (let i = 0; i < oldPdfNumber; i++) {
-        await this.runInWorker('waitForOldPdfClicked', i)
-        let redFrame = await this.runInWorker('checkRedFrame')
-        if (redFrame !== null) {
-          this.log('warn', 'Website did not load the bills')
-          throw new Error('VENDOR_DOWN')
-        }
-        await this.clickAndWait(
-          'a[class="h1 menu-subtitle mb-0 pb-1"]',
-          '[data-e2e="bp-tile-historic"]'
+      await this.runInWorker('processingRecentBill')
+      this.store.dataUri = []
+      for (let i = 0; i < this.store.resolvedBase64.length; i++) {
+        let dateArray = this.store.resolvedBase64[i].href.match(
+          /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
         )
-        redFrame = await this.runInWorker('checkRedFrame')
-        if (redFrame !== null) {
-          this.log('warn', 'Website did not load the bills')
-          throw new Error('VENDOR_DOWN')
-        }
-        await this.clickAndWait(
-          '[data-e2e="bp-tile-historic"]',
-          '[aria-labelledby="bp-billsHistoryTitle"]'
-        )
-        redFrame = await this.runInWorker('checkRedFrame')
-        if (redFrame !== null) {
-          this.log('warn', 'Website did not load the bills')
-          throw new Error('VENDOR_DOWN')
-        }
-        await this.clickAndWait(
-          '[data-e2e="bh-more-bills"]',
-          '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-        )
-      }
-      this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
-    }
-    await this.runInWorker('processingBills')
-    this.store.dataUri = []
-    for (let i = 0; i < this.store.resolvedBase64.length; i++) {
-      let dateArray = this.store.resolvedBase64[i].href.match(
-        /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
-      )
-      this.store.resolvedBase64[i].date = dateArray[0]
-      const index = this.store.allBills.findIndex(function (bill) {
-        return bill.date === dateArray[0]
-      })
-      this.store.dataUri.push({
-        vendor: 'orange.fr',
-        date: this.store.allBills[index].date,
-        amount: this.store.allBills[index].amount / 100,
-        recurrence: 'monthly',
-        vendorRef: this.store.allBills[index].id
-          ? this.store.allBills[index].id
-          : this.store.allBills[index].tecId,
-        filename: await getFileName(
-          this.store.allBills[index].date,
-          this.store.allBills[index].amount / 100,
-          this.store.allBills[index].id || this.store.allBills[index].tecId
-        ),
-        dataUri: this.store.resolvedBase64[i].uri,
-        fileAttributes: {
-          metadata: {
-            invoiceNumber: this.store.allBills[index].id
-              ? this.store.allBills[index].id
-              : this.store.allBills[index].tecId,
-            contentAuthor: 'orange',
-            datetime: this.store.allBills[index].date,
-            datetimeLabel: 'startDate',
-            isSubscription: true,
-            startDate: this.store.allBills[index].date,
-            carbonCopy: true
+        this.store.resolvedBase64[i].date = dateArray[0]
+        const index = this.store.recentBillsToAdd.findIndex(function (bill) {
+          return bill.date === dateArray[0]
+        })
+        this.store.dataUri.push({
+          vendor: 'orange.fr',
+          date: this.store.recentBillsToAdd[index].date,
+          amount: this.store.recentBillsToAdd[index].amount / 100,
+          recurrence: 'monthly',
+          vendorRef: this.store.recentBillsToAdd[index].id
+            ? this.store.recentBillsToAdd[index].id
+            : this.store.recentBillsToAdd[index].tecId,
+          filename: await getFileName(
+            this.store.recentBillsToAdd[index].date,
+            this.store.recentBillsToAdd[index].amount / 100,
+            this.store.recentBillsToAdd[index].id ||
+              this.store.recentBillsToAdd[index].tecId
+          ),
+          dataUri: this.store.resolvedBase64[i].uri,
+          fileAttributes: {
+            metadata: {
+              invoiceNumber: this.store.recentBillsToAdd[index].id
+                ? this.store.recentBillsToAdd[index].id
+                : this.store.recentBillsToAdd[index].tecId,
+              contentAuthor: 'orange',
+              datetime: this.store.recentBillsToAdd[index].date,
+              datetimeLabel: 'startDate',
+              isSubscription: true,
+              startDate: this.store.recentBillsToAdd[index].date,
+              carbonCopy: true
+            }
           }
-        }
+        })
+      }
+      await this.saveBills(this.store.dataUri, {
+        context,
+        fileIdAttributes: ['filename'],
+        contentType: 'application/pdf',
+        qualificationLabel: 'isp_invoice'
       })
     }
-    await this.saveIdentity({
-      mailAdress: this.store.infosIdentity.mail,
-      city: this.store.infosIdentity.city,
-      phoneNumber: this.store.infosIdentity.phoneNumber
-    })
-    await this.saveBills(this.store.dataUri, {
-      context,
-      fileIdAttributes: ['filename'],
-      contentType: 'application/pdf',
-      qualificationLabel: 'isp_invoice'
-    })
-    await this.clickAndWait(
-      '#o-identityLink',
-      'a[data-oevent-action="sedeconnecter"]'
-    )
-    await this.clickAndWait(
-      'a[data-oevent-action="sedeconnecter"]',
-      'a[data-oevent-action="identifiez-vous"]'
-    )
+  }
+
+  async convertOldsToCozyBills(context, oldPdfNumber) {
+    for (let i = 0; i < oldPdfNumber; i++) {
+      await this.runInWorker('waitForOldPdfClicked', i)
+      let redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      await this.clickAndWait(
+        'a[class="h1 menu-subtitle mb-0 pb-1"]',
+        '[data-e2e="bp-tile-historic"]'
+      )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      await this.clickAndWait(
+        '[data-e2e="bp-tile-historic"]',
+        '[aria-labelledby="bp-billsHistoryTitle"]'
+      )
+      redFrame = await this.runInWorker('checkRedFrame')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      await this.clickAndWait(
+        '[data-e2e="bh-more-bills"]',
+        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
+      )
+      await this.runInWorker('processingOldBill')
+      this.store.dataUri = []
+      for (let i = 0; i < this.store.resolvedBase64.length; i++) {
+        let dateArray = this.store.resolvedBase64[i].href.match(
+          /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
+        )
+        this.store.resolvedBase64[i].date = dateArray[0]
+        const index = this.store.oldBillsToAdd.findIndex(function (bill) {
+          return bill.date === dateArray[0]
+        })
+        this.store.dataUri.push({
+          vendor: 'orange.fr',
+          date: this.store.oldBillsToAdd[index].date,
+          amount: this.store.oldBillsToAdd[index].amount / 100,
+          recurrence: 'monthly',
+          vendorRef: this.store.oldBillsToAdd[index].id
+            ? this.store.oldBillsToAdd[index].id
+            : this.store.oldBillsToAdd[index].tecId,
+          filename: await getFileName(
+            this.store.oldBillsToAdd[index].date,
+            this.store.oldBillsToAdd[index].amount / 100,
+            this.store.oldBillsToAdd[index].id ||
+              this.store.oldBillsToAdd[index].tecId
+          ),
+          dataUri: this.store.resolvedBase64[i].uri,
+          fileAttributes: {
+            metadata: {
+              invoiceNumber: this.store.oldBillsToAdd[index].id
+                ? this.store.oldBillsToAdd[index].id
+                : this.store.oldBillsToAdd[index].tecId,
+              contentAuthor: 'orange',
+              datetime: this.store.oldBillsToAdd[index].date,
+              datetimeLabel: 'startDate',
+              isSubscription: true,
+              startDate: this.store.oldBillsToAdd[index].date,
+              carbonCopy: true
+            }
+          }
+        })
+      }
+      await this.saveBills(this.store.dataUri, {
+        context,
+        fileIdAttributes: ['filename'],
+        contentType: 'application/pdf',
+        qualificationLabel: 'isp_invoice'
+      })
+    }
   }
 
   findMoreBillsButton() {
@@ -622,25 +685,20 @@ class OrangeContentScript extends ContentScript {
     return button
   }
 
-  async processingBills() {
+  async processingRecentBill() {
     let resolvedBase64 = []
     this.log('info', 'Awaiting promises')
     const recentToBase64 = await Promise.all(
       recentPromisesToConvertBlobToBase64
     )
-    const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
     this.log('info', 'Processing promises')
-    const promisesToBase64 = recentToBase64.concat(oldToBase64)
-    const xhrUrls = recentXhrUrls.concat(oldXhrUrls)
-    for (let i = 0; i < promisesToBase64.length; i++) {
+    for (let i = 0; i < recentToBase64.length; i++) {
       resolvedBase64.push({
-        uri: promisesToBase64[i],
-        href: xhrUrls[i]
+        uri: recentToBase64[i],
+        href: recentXhrUrls[i]
       })
     }
     const recentBillsToAdd = recentBills[0].billsHistory.billList
-    const oldBillsToAdd = oldBills[0].oldBills
-    let allBills = recentBillsToAdd.concat(oldBillsToAdd)
     this.log('debug', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
@@ -654,9 +712,41 @@ class OrangeContentScript extends ContentScript {
     }
     await this.sendToPilot({
       resolvedBase64,
-      allBills,
+      recentBillsToAdd,
       infosIdentity
     })
+    resolvedBase64 = []
+  }
+
+  async processingOldBill() {
+    let resolvedBase64 = []
+    this.log('info', 'Awaiting promises')
+    const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
+    this.log('info', 'Processing promises')
+    for (let i = 0; i < oldToBase64.length; i++) {
+      resolvedBase64.push({
+        uri: oldToBase64[i],
+        href: oldXhrUrls[i]
+      })
+    }
+    const oldBillsToAdd = oldBills[0].oldBills
+    this.log('debug', 'billsArray ready, Sending to pilot')
+    const infosIdentity = {
+      phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
+      mail: document.querySelector('.o-identityLayer-detail').innerHTML
+    }
+    // City is not always given, depending of the user and if it's an internet or mobile subscription.
+    let city
+    if (userInfos[0].contracts[0].contractInstallationArea) {
+      city = userInfos[0].contracts[0].contractInstallationArea.city
+      infosIdentity.city = city
+    }
+    await this.sendToPilot({
+      resolvedBase64,
+      oldBillsToAdd,
+      infosIdentity
+    })
+    resolvedBase64 = []
   }
 
   checkIfRemember() {
@@ -738,7 +828,8 @@ connector
       'getUserMail',
       'checkRedFrame',
       'getMoreBillsButton',
-      'processingBills',
+      'processingRecentBill',
+      'processingOldBill',
       'getTestEmail',
       'fillingForm',
       'getPdfNumber',
