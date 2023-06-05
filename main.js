@@ -5131,7 +5131,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await Promise.race([
       this.waitForElementInWorker('#login-label'),
       this.waitForElementInWorker('#password-label'),
-      this.waitForElementInWorker('#oecs__connecte-se-deconnecter'),
+      this.waitForElementInWorker('button[data-testid="button-keepconnected"]'),
       this.waitForElementInWorker('div[class*="captcha_responseContainer"]'),
       this.waitForElementInWorker('#undefined-label')
     ])
@@ -5574,7 +5574,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   findStayLoggedButton() {
     this.log('info', 'Starting findStayLoggedButton')
     const button = document.querySelector(
-      '[data-oevent-label="bouton_rester_identifie"]'
+      'button[data-testid="button-keepconnected"]'
     )
     return button
   }
@@ -5823,8 +5823,11 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async waitForCaptchaResolution() {
     const passwordInput = document.querySelector('#password')
     const loginInput = document.querySelector('#login')
+    const stayLoggedButton = document.querySelector(
+      'button[data-testid="button-keepconnected"]'
+    )
     const otherAccountButton = document.querySelector('#undefined-label')
-    if (passwordInput || loginInput || otherAccountButton) {
+    if (passwordInput || loginInput || otherAccountButton || stayLoggedButton) {
       return true
     }
     return false
