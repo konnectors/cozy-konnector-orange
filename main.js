@@ -5801,7 +5801,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
-    log('info', oldPdfNumber)
+    log('info', `${oldPdfNumber}`)
     log('info', 'Will convert')
     await this.convertRecentsToCozyBills(context, recentPdfNumber)
     this.log('info', 'recentPdf loop ended')
@@ -6345,13 +6345,17 @@ async function getFileName(date, amount, vendorRef) {
 
 async function hashVendorRef(vendorRef) {
   log('warn', 'Starting hashVendorRef')
-  log('warn', window.location.href)
+  log('info', window.location.href)
+  log('info', vendorRef)
+  return Date.now().toString()
+  /*
   const msgUint8 = new window.TextEncoder().encode(vendorRef) // encode as (utf-8) Uint8Array
-  // log('warn', msgUint8)
+  //log('warn', msgUint8)
   const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8) // hash the message
   const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('') // convert bytes to hex string
   return hashHex
+  */
 }
 
 })();
