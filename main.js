@@ -5801,6 +5801,8 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
+    log('info', oldPdfNumber)
+    log('info', 'Will convert')
     await this.convertRecentsToCozyBills(context, recentPdfNumber)
     this.log('info', 'recentPdf loop ended')
     if (oldPdfNumber != 0) {
@@ -5829,6 +5831,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async convertRecentsToCozyBills(context, recentPdfNumber) {
     for (let i = 0; i < recentPdfNumber; i++) {
+      log('info', `LOOPING ${i} element`)
       await this.runInWorker('waitForRecentPdfClicked', i)
       let redFrame = await this.runInWorker('checkRedFrame')
       if (redFrame !== null) {
@@ -6150,6 +6153,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async getPdfNumber() {
     this.log('info', 'Getting in getPdfNumber')
     let pdfNumber = this.findPdfNumber()
+    this.log('info', 'Ending in getPdfNumber')
     return pdfNumber
   }
 
