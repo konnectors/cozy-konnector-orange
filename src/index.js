@@ -401,7 +401,8 @@ class OrangeContentScript extends ContentScript {
           vendorRef: this.store.recentBillsToAdd[index].id
             ? this.store.recentBillsToAdd[index].id
             : this.store.recentBillsToAdd[index].tecId,
-          filename: await getFileName(
+          filename: await this.runInWorker(
+            'getFileName',
             this.store.recentBillsToAdd[index].date,
             this.store.recentBillsToAdd[index].amount / 100,
             this.store.recentBillsToAdd[index].id ||
@@ -480,7 +481,8 @@ class OrangeContentScript extends ContentScript {
           vendorRef: this.store.oldBillsToAdd[index].id
             ? this.store.oldBillsToAdd[index].id
             : this.store.oldBillsToAdd[index].tecId,
-          filename: await getFileName(
+          filename: await this.runInWorker(
+            'getFileName',
             this.store.oldBillsToAdd[index].date,
             this.store.oldBillsToAdd[index].amount / 100,
             this.store.oldBillsToAdd[index].id ||
@@ -822,6 +824,12 @@ class OrangeContentScript extends ContentScript {
     }
     return false
   }
+
+  async getFileName(date, amount, vendorRef) {
+    const digestId = await hashVendorRef(vendorRef)
+    const shortenedId = digestId.substr(0, 5)
+    return `${date}_orange_${amount}€_${shortenedId}.pdf`
+  }
 }
 
 const connector = new OrangeContentScript()
@@ -845,7 +853,8 @@ connector
       'isElementPresent',
       'waitForCaptchaResolution',
       'checkAccountListPage',
-      'checkBillsElement'
+      'checkBillsElement',
+      'getFileName'
     ]
   })
   .catch(err => {
@@ -858,12 +867,6 @@ connector
 //     setTimeout(resolve, delay * 1000)
 //   })
 // }
-
-async function getFileName(date, amount, vendorRef) {
-  const digestId = await hashVendorRef(vendorRef)
-  const shortenedId = digestId.substr(0, 5)
-  return `${date}_orange_${amount}€_${shortenedId}.pdf`
-}
 
 async function hashVendorRef(vendorRef) {
   const msgUint8 = new window.TextEncoder().encode(vendorRef) // encode as (utf-8) Uint8Array
