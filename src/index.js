@@ -6,7 +6,6 @@ Minilog.enable('orangeCCC')
 
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
-const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'orange'
 const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
 let recentBills = []
@@ -114,7 +113,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureAuthenticated() {
-    this.log('info', 'ensureAuthenticated starts')
+    this.log('info', '🤖 ensureAuthenticated starts')
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
@@ -204,7 +203,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureNotAuthenticated() {
-    this.log('info', 'ensureNotAuthenticated starts')
+    this.log('info', '🤖 ensureNotAuthenticated starts')
     await this.navigateToLoginForm()
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (!authenticated) {
@@ -289,7 +288,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async fetch(context) {
-    this.log('info', 'Starting fetch')
+    this.log('info', '🤖 fetch start')
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
@@ -585,11 +584,11 @@ class OrangeContentScript extends ContentScript {
   }
 
   async getUserDataFromWebsite() {
+    this.log('info', '🤖 getUserDataFromWebsite starts')
     await this.waitForElementInWorker('.o-identityLayer-detail')
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
-      this.log('warn', "Couldn't get a sourceAccountIdentifier, using default")
-      return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
+      throw new Error('Could not get a sourceAccountIdentifier')
     }
     return {
       sourceAccountIdentifier: sourceAccountId
