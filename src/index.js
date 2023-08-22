@@ -1,6 +1,8 @@
 import { ContentScript } from 'cozy-clisk/dist/contentscript'
 import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import Minilog from '@cozy/minilog'
+import waitFor from 'p-wait-for'
+
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
 
@@ -790,7 +792,7 @@ class OrangeContentScript extends ContentScript {
     return false
   }
 
-  async waitForCaptchaResolution() {
+  async checkCaptchaResolution() {
     const passwordInput = document.querySelector('#password')
     const loginInput = document.querySelector('#login')
     const stayLoggedButton = document.querySelector(
@@ -801,6 +803,14 @@ class OrangeContentScript extends ContentScript {
       return true
     }
     return false
+  }
+
+  async waitForCaptchaResolution() {
+    await waitFor(this.checkCaptchaResolution, {
+      interval: 1000,
+      timeout: 60 * 1000
+    })
+    return true
   }
 
   async checkAccountListPage() {
@@ -828,6 +838,13 @@ class OrangeContentScript extends ContentScript {
     const digestId = await hashVendorRef(vendorRef)
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
+  }
+  async waitForBillsElement() {
+    await waitFor(this.checkBillsElement, {
+      interval: 1000,
+      timeout: 30 * 1000
+    })
+    return true
   }
 }
 
