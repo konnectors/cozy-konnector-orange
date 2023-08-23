@@ -1,12 +1,13 @@
 import { ContentScript } from 'cozy-clisk/dist/contentscript'
 import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import Minilog from '@cozy/minilog'
+import waitFor from 'p-wait-for'
+
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
 
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
-const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'orange'
 const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
 let recentBills = []
@@ -114,7 +115,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureAuthenticated() {
-    this.log('info', 'ensureAuthenticated starts')
+    this.log('info', '🤖 ensureAuthenticated starts')
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
@@ -204,7 +205,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async ensureNotAuthenticated() {
-    this.log('info', 'ensureNotAuthenticated starts')
+    this.log('info', '🤖 ensureNotAuthenticated starts')
     await this.navigateToLoginForm()
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (!authenticated) {
@@ -289,7 +290,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async fetch(context) {
-    this.log('info', 'Starting fetch')
+    this.log('info', '🤖 fetch start')
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
@@ -590,11 +591,11 @@ class OrangeContentScript extends ContentScript {
   }
 
   async getUserDataFromWebsite() {
+    this.log('info', '🤖 getUserDataFromWebsite starts')
     await this.waitForElementInWorker('.o-identityLayer-detail')
     const sourceAccountId = await this.runInWorker('getUserMail')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
-      this.log('warn', "Couldn't get a sourceAccountIdentifier, using default")
-      return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
+      throw new Error('Could not get a sourceAccountIdentifier')
     }
     return {
       sourceAccountIdentifier: sourceAccountId
@@ -796,7 +797,7 @@ class OrangeContentScript extends ContentScript {
     return false
   }
 
-  async waitForCaptchaResolution() {
+  async checkCaptchaResolution() {
     const passwordInput = document.querySelector('#password')
     const loginInput = document.querySelector('#login')
     const stayLoggedButton = document.querySelector(
@@ -807,6 +808,14 @@ class OrangeContentScript extends ContentScript {
       return true
     }
     return false
+  }
+
+  async waitForCaptchaResolution() {
+    await waitFor(this.checkCaptchaResolution, {
+      interval: 1000,
+      timeout: 60 * 1000
+    })
+    return true
   }
 
   async checkAccountListPage() {
@@ -834,6 +843,14 @@ class OrangeContentScript extends ContentScript {
     const digestId = await hashVendorRef(vendorRef)
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
+  }
+  
+  async waitForBillsElement() {
+    await waitFor(this.checkBillsElement, {
+      interval: 1000,
+      timeout: 30 * 1000
+    })
+    return true
   }
 }
 
