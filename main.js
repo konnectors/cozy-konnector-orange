@@ -5823,10 +5823,15 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       '#o-identityLink',
       'a[data-oevent-action="sedeconnecter"]'
     )
-    await this.clickAndWait(
-      'a[data-oevent-action="sedeconnecter"]',
-      'a[data-oevent-action="identifiez-vous"]'
-    )
+    try {
+      await this.clickAndWait(
+        'a[data-oevent-action="sedeconnecter"]',
+        'a[data-oevent-action="identifiez-vous"]'
+      )
+    } catch (e) {
+      log('error', 'Not completly disconnected, never found the second link')
+      throw e
+    }
   }
 
   async convertRecentsToCozyBills(context, recentPdfNumber) {
@@ -6314,6 +6319,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
   }
+
   async waitForBillsElement() {
     await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.checkBillsElement, {
       interval: 1000,
