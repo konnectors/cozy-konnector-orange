@@ -109,7 +109,7 @@ class OrangeContentScript extends ContentScript {
       'checkForCaptcha'
     )
     if (askForCaptcha) {
-      this.log('debug', 'captcha found, waiting for resolution')
+      this.log('info', 'captcha found, waiting for resolution')
       await this.waitForUserAction(captchaUrl)
     }
   }
@@ -120,7 +120,7 @@ class OrangeContentScript extends ContentScript {
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
     if (credentials) {
-      this.log('debug', 'found credentials, processing')
+      this.log('info', 'found credentials, processing')
       await this.waitForElementInWorker('#o-ribbon')
       await Promise.race([
         this.waitForElementInWorker('p[data-testid="selected-account-login"]'),
@@ -147,7 +147,7 @@ class OrangeContentScript extends ContentScript {
           }
         }
         if (type === 'mailList') {
-          this.log('debug', 'found credentials, trying to autoLog')
+          this.log('info', 'found credentials, trying to autoLog')
           const mailSelector = `a[id="choose-account-${testEmail}"]`
           await this.runInWorker('click', mailSelector)
           await this.tryAutoLogin(credentials, 'half')
@@ -156,7 +156,7 @@ class OrangeContentScript extends ContentScript {
       }
 
       if (credentials.email != testEmail) {
-        this.log('debug', 'getting in different testEmail conditions')
+        this.log('info', 'getting in different testEmail conditions')
         const isChangeAccountPresent = await this.runInWorker(
           'isElementPresent',
           '#changeAccountLink'
@@ -178,10 +178,10 @@ class OrangeContentScript extends ContentScript {
       }
     }
     if (!credentials) {
-      this.log('debug', 'no credentials found, use normal user login')
+      this.log('info', 'no credentials found, use normal user login')
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
-        this.log('debug', 'Already visited')
+        this.log('info', 'Already visited')
         await this.clickAndWait('#changeAccountLink', '#undefined-label')
         await this.clickAndWait('#undefined-label', '#login')
         await this.waitForUserAuthentication()
@@ -189,10 +189,7 @@ class OrangeContentScript extends ContentScript {
       }
       const isAccountListPage = await this.runInWorker('checkAccountListPage')
       if (isAccountListPage) {
-        this.log(
-          'debug',
-          'Webview on accountsList page, go to first login step'
-        )
+        this.log('info', 'Webview on accountsList page, go to first login step')
         await this.runInWorker('click', '#undefined-label')
         await this.waitForElementInWorker('#login-label')
       }
@@ -232,7 +229,7 @@ class OrangeContentScript extends ContentScript {
       const userCredentials = await this.findAndSendCredentials.bind(this)(
         loginField
       )
-      this.log('debug', 'Sending user credentials to Pilot')
+      this.log('info', 'Sending user credentials to Pilot')
       this.sendToPilot({
         userCredentials
       })
@@ -251,7 +248,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async waitForUserAuthentication() {
-    this.log('debug', 'waitForUserAuthentication start')
+    this.log('info', 'waitForUserAuthentication start')
     await this.setWorkerState({
       visible: true
     })
@@ -707,7 +704,7 @@ class OrangeContentScript extends ContentScript {
       })
     }
     const recentBillsToAdd = recentBills[0].billsHistory.billList
-    this.log('debug', 'billsArray ready, Sending to pilot')
+    this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
@@ -738,7 +735,7 @@ class OrangeContentScript extends ContentScript {
       })
     }
     const oldBillsToAdd = oldBills[0].oldBills
-    this.log('debug', 'billsArray ready, Sending to pilot')
+    this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
       phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
