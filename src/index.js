@@ -844,7 +844,7 @@ class OrangeContentScript extends ContentScript {
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
   }
-  
+
   async waitForBillsElement() {
     await waitFor(this.checkBillsElement, {
       interval: 1000,
