@@ -5792,7 +5792,8 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     this.log('info', '🤖 3')
     await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
     this.log('info', '🤖 4')
-    await this.clickAndWait(`a[href="${DEFAULT_PAGE_URL}"`, 'strong')
+    await this.goto(DEFAULT_PAGE_URL)
+    await this.waitForElementInWorker('strong')
     this.log('info', '🤖 5')
     const billsPage = await this.runInWorkerUntilTrue({
       method: 'checkBillsElement'
@@ -6333,8 +6334,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return false
   }
 
-  async checkBillsElement() {
-    this.log('info', 'checkBillsElement starts')
+  async findAndClickBillsElement() {
     const strongElements = document.querySelectorAll('strong')
     for (const element of strongElements) {
       if (element.textContent === 'Factures et paiements') {
@@ -6344,6 +6344,13 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       }
     }
     return false
+  }
+  async checkBillsElement() {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.findAndClickBillsElement, {
+      interval: 1000,
+      timeout: 30 * 1000
+    })
+    return true
   }
 
   async getFileName(date, amount, vendorRef) {
