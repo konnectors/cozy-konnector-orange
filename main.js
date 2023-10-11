@@ -5610,90 +5610,100 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async ensureAuthenticated() {
-    this.log('info', '🤖 ensureAuthenticated starts')
-    await this.navigateToLoginForm()
-    const credentials = await this.getCredentials()
-    await this.waitForElementInWorker('#o-ribbon')
-    if (credentials) {
-      this.log('info', 'found credentials, processing')
+    try {
+      this.log('info', '🤖 ensureAuthenticated starts')
+      await this.navigateToLoginForm()
+      const credentials = await this.getCredentials()
       await this.waitForElementInWorker('#o-ribbon')
-      await Promise.race([
-        this.waitForElementInWorker('p[data-testid="selected-account-login"]'),
-        this.waitForElementInWorker('#undefined-label')
-      ])
-      const { testEmail, type } = await this.runInWorker('getTestEmail')
-      if (credentials.email === testEmail) {
-        if (type === 'mail') {
-          await this.waitForElementInWorker('#o-ribbon')
-          await this.tryAutoLogin(credentials, 'half')
-          await this.waitForElementInWorker('#o-ribbon-right')
-          const stayLogButton = await this.runInWorker('getStayLoggedButton')
-          if (stayLogButton != null) {
-            stayLogButton.click()
-            await this.waitForElementInWorker(
-              'div[class="o-ribbon-is-connected"]'
-            )
-            return true
-          } else {
-            await this.waitForElementInWorker(
-              'div[class="o-ribbon-is-connected"]'
-            )
+      if (credentials) {
+        this.log('info', 'found credentials, processing')
+        await this.waitForElementInWorker('#o-ribbon')
+        await Promise.race([
+          this.waitForElementInWorker(
+            'p[data-testid="selected-account-login"]'
+          ),
+          this.waitForElementInWorker('#undefined-label')
+        ])
+        const { testEmail, type } = await this.runInWorker('getTestEmail')
+        if (credentials.email === testEmail) {
+          if (type === 'mail') {
+            await this.waitForElementInWorker('#o-ribbon')
+            await this.tryAutoLogin(credentials, 'half')
+            await this.waitForElementInWorker('#o-ribbon-right')
+            const stayLogButton = await this.runInWorker('getStayLoggedButton')
+            if (stayLogButton != null) {
+              stayLogButton.click()
+              await this.waitForElementInWorker(
+                'div[class="o-ribbon-is-connected"]'
+              )
+              return true
+            } else {
+              await this.waitForElementInWorker(
+                'div[class="o-ribbon-is-connected"]'
+              )
+              return true
+            }
+          }
+          if (type === 'mailList') {
+            this.log('info', 'found credentials, trying to autoLog')
+            const mailSelector = `a[id="choose-account-${testEmail}"]`
+            await this.runInWorker('click', mailSelector)
+            await this.tryAutoLogin(credentials, 'half')
             return true
           }
         }
-        if (type === 'mailList') {
-          this.log('info', 'found credentials, trying to autoLog')
-          const mailSelector = `a[id="choose-account-${testEmail}"]`
-          await this.runInWorker('click', mailSelector)
-          await this.tryAutoLogin(credentials, 'half')
+
+        if (credentials.email != testEmail) {
+          this.log('info', 'getting in different testEmail conditions')
+          const isChangeAccountPresent = await this.runInWorker(
+            'isElementPresent',
+            '#changeAccountLink'
+          )
+          const isUndefinedPresent = await this.runInWorker(
+            'isElementPresent',
+            '#undefined-label'
+          )
+          if (isChangeAccountPresent) {
+            await this.clickAndWait('#changeAccountLink', '#undefined-label')
+          } else if (!isUndefinedPresent) {
+            throw new Error(
+              'Unexpected case where neither changeaccount link or undefined account link are presents'
+            )
+          }
+          await this.clickAndWait('#undefined-label', '#login')
+          await this.tryAutoLogin(credentials, 'full')
           return true
         }
       }
-
-      if (credentials.email != testEmail) {
-        this.log('info', 'getting in different testEmail conditions')
-        const isChangeAccountPresent = await this.runInWorker(
-          'isElementPresent',
-          '#changeAccountLink'
-        )
-        const isUndefinedPresent = await this.runInWorker(
-          'isElementPresent',
-          '#undefined-label'
-        )
-        if (isChangeAccountPresent) {
+      if (!credentials) {
+        this.log('info', 'no credentials found, use normal user login')
+        const rememberUser = await this.runInWorker('checkIfRemember')
+        if (rememberUser) {
+          this.log('info', 'Already visited')
           await this.clickAndWait('#changeAccountLink', '#undefined-label')
-        } else if (!isUndefinedPresent) {
-          throw new Error(
-            'Unexpected case where neither changeaccount link or undefined account link are presents'
-          )
+          await this.clickAndWait('#undefined-label', '#login')
+          await this.waitForUserAuthentication()
+          return true
         }
-        await this.clickAndWait('#undefined-label', '#login')
-        await this.tryAutoLogin(credentials, 'full')
-        return true
-      }
-    }
-    if (!credentials) {
-      this.log('info', 'no credentials found, use normal user login')
-      const rememberUser = await this.runInWorker('checkIfRemember')
-      if (rememberUser) {
-        this.log('info', 'Already visited')
-        await this.clickAndWait('#changeAccountLink', '#undefined-label')
-        await this.clickAndWait('#undefined-label', '#login')
+        const isAccountListPage = await this.runInWorker('checkAccountListPage')
+        if (isAccountListPage) {
+          this.log(
+            'info',
+            'Webview on accountsList page, go to first login step'
+          )
+          await this.runInWorker('click', '#undefined-label')
+          await this.waitForElementInWorker('#login-label')
+        }
         await this.waitForUserAuthentication()
         return true
       }
-      const isAccountListPage = await this.runInWorker('checkAccountListPage')
-      if (isAccountListPage) {
-        this.log('info', 'Webview on accountsList page, go to first login step')
-        await this.runInWorker('click', '#undefined-label')
-        await this.waitForElementInWorker('#login-label')
-      }
-      await this.waitForUserAuthentication()
-      return true
-    }
 
-    this.log('warn', 'Not authenticated')
-    throw new Error('LOGIN_FAILED')
+      this.log('warn', 'Not authenticated')
+      throw new Error('LOGIN_FAILED')
+    } catch (err) {
+      this.log('error', '❌❌❌ failed in ensureAuthenticated: ' + err.message)
+      throw err
+    }
   }
 
   async ensureNotAuthenticated() {
@@ -5782,88 +5792,93 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async fetch(context) {
-    this.log('info', '🤖 fetch start')
-    this.log('info', '🤖 1')
-    if (this.store.userCredentials != undefined) {
-      await this.saveCredentials(this.store.userCredentials)
-    }
-    this.log('info', '🤖 2')
-    await this.runInWorker('checkInfosConfirmation')
-    this.log('info', '🤖 3')
-    await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
-    this.log('info', '🤖 4')
-    await this.goto(DEFAULT_PAGE_URL)
-    await this.waitForElementInWorker('strong')
-    this.log('info', '🤖 5')
-    const billsPage = await this.runInWorkerUntilTrue({
-      method: 'checkBillsElement'
-    })
-    this.log('info', '🤖 6')
-    if (!billsPage) {
-      this.log('warn', 'Cannot find a path to the bills page')
-      throw new Error('Cannot find a path to bill Page, aborting execution')
-    }
-    this.log('info', '🤖 7')
-    await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
-    this.log('info', '🤖 8')
-    await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
-    this.log('info', '🤖 9')
-    await Promise.race([
-      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
-      this.waitForElementInWorker('.alert-icon icon-error-severe'),
-      this.waitForElementInWorker(
-        '.alert-container alert-container-sm alert-danger mb-0'
-      )
-    ])
-    this.log('info', '🤖 10')
-    const redFrame = await this.runInWorker('checkRedFrame')
-    this.log('info', '🤖 11')
-    if (redFrame !== null) {
-      this.log('warn', 'Website did not load the bills')
-      throw new Error('VENDOR_DOWN')
-    }
-    this.log('info', '🤖 12')
-    let recentPdfNumber = await this.runInWorker('getPdfNumber')
-    this.log('info', '🤖 13')
-    const hasMoreBills = await this.runInWorker('getMoreBillsButton')
-    this.log('info', '🤖 14')
-    if (hasMoreBills) {
-      await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-      )
-    }
-    this.log('info', '🤖 15')
-    let allPdfNumber = await this.runInWorker('getPdfNumber')
-    let oldPdfNumber = allPdfNumber - recentPdfNumber
-    await this.convertRecentsToCozyBills(context, recentPdfNumber)
-    this.log('info', 'recentPdf loop ended')
-    if (oldPdfNumber != 0) {
-      await this.convertOldsToCozyBills(context, oldPdfNumber)
-      this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
-    }
-    await this.saveIdentity({
-      mailAdress: this.store.infosIdentity.mail,
-      // As we're not sure city is present for the running account, we check if it existe in infosIdentity.
-      // If it does, then we spread the object containing city, if not, we spread an empty object
-      // Resulting in "city" not present in the final identity
-      ...(this.store.infosIdentity.city
-        ? { city: this.store.infosIdentity.city }
-        : {}),
-      phoneNumber: this.store.infosIdentity.phoneNumber
-    })
-    await this.clickAndWait(
-      '#o-identityLink',
-      'a[data-oevent-action="sedeconnecter"]'
-    )
     try {
+      this.log('info', '🤖 fetch start')
+      this.log('info', '🤖 1')
+      if (this.store.userCredentials != undefined) {
+        await this.saveCredentials(this.store.userCredentials)
+      }
+      this.log('info', '🤖 2')
+      await this.runInWorker('checkInfosConfirmation')
+      this.log('info', '🤖 3')
+      await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
+      this.log('info', '🤖 4')
+      await this.goto(DEFAULT_PAGE_URL)
+      await this.waitForElementInWorker('strong')
+      this.log('info', '🤖 5')
+      const billsPage = await this.runInWorkerUntilTrue({
+        method: 'checkBillsElement'
+      })
+      this.log('info', '🤖 6')
+      if (!billsPage) {
+        this.log('warn', 'Cannot find a path to the bills page')
+        throw new Error('Cannot find a path to bill Page, aborting execution')
+      }
+      this.log('info', '🤖 7')
+      await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
+      this.log('info', '🤖 8')
+      await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
+      this.log('info', '🤖 9')
+      await Promise.race([
+        this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
+        this.waitForElementInWorker('.alert-icon icon-error-severe'),
+        this.waitForElementInWorker(
+          '.alert-container alert-container-sm alert-danger mb-0'
+        )
+      ])
+      this.log('info', '🤖 10')
+      const redFrame = await this.runInWorker('checkRedFrame')
+      this.log('info', '🤖 11')
+      if (redFrame !== null) {
+        this.log('warn', 'Website did not load the bills')
+        throw new Error('VENDOR_DOWN')
+      }
+      this.log('info', '🤖 12')
+      let recentPdfNumber = await this.runInWorker('getPdfNumber')
+      this.log('info', '🤖 13')
+      const hasMoreBills = await this.runInWorker('getMoreBillsButton')
+      this.log('info', '🤖 14')
+      if (hasMoreBills) {
+        await this.clickAndWait(
+          '[data-e2e="bh-more-bills"]',
+          '[aria-labelledby="bp-historicBillsHistoryTitle"]'
+        )
+      }
+      this.log('info', '🤖 15')
+      let allPdfNumber = await this.runInWorker('getPdfNumber')
+      let oldPdfNumber = allPdfNumber - recentPdfNumber
+      await this.convertRecentsToCozyBills(context, recentPdfNumber)
+      this.log('info', 'recentPdf loop ended')
+      if (oldPdfNumber != 0) {
+        await this.convertOldsToCozyBills(context, oldPdfNumber)
+        this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
+      }
+      await this.saveIdentity({
+        mailAdress: this.store.infosIdentity.mail,
+        // As we're not sure city is present for the running account, we check if it existe in infosIdentity.
+        // If it does, then we spread the object containing city, if not, we spread an empty object
+        // Resulting in "city" not present in the final identity
+        ...(this.store.infosIdentity.city
+          ? { city: this.store.infosIdentity.city }
+          : {}),
+        phoneNumber: this.store.infosIdentity.phoneNumber
+      })
       await this.clickAndWait(
-        'a[data-oevent-action="sedeconnecter"]',
-        'a[data-oevent-action="identifiez-vous"]'
+        '#o-identityLink',
+        'a[data-oevent-action="sedeconnecter"]'
       )
-    } catch (e) {
-      log('error', 'Not completly disconnected, never found the second link')
-      throw e
+      try {
+        await this.clickAndWait(
+          'a[data-oevent-action="sedeconnecter"]',
+          'a[data-oevent-action="identifiez-vous"]'
+        )
+      } catch (e) {
+        log('error', 'Not completly disconnected, never found the second link')
+        throw e
+      }
+    } catch (err) {
+      this.log('error', '❌❌❌ failed in fetch: ' + err.message)
+      throw err
     }
   }
 
@@ -6099,14 +6114,22 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async getUserDataFromWebsite() {
-    this.log('info', '🤖 getUserDataFromWebsite starts')
-    await this.waitForElementInWorker('.o-identityLayer-detail')
-    const sourceAccountId = await this.runInWorker('getUserMail')
-    if (sourceAccountId === 'UNKNOWN_ERROR') {
-      throw new Error('Could not get a sourceAccountIdentifier')
-    }
-    return {
-      sourceAccountIdentifier: sourceAccountId
+    try {
+      this.log('info', '🤖 getUserDataFromWebsite starts')
+      await this.waitForElementInWorker('.o-identityLayer-detail')
+      const sourceAccountId = await this.runInWorker('getUserMail')
+      if (sourceAccountId === 'UNKNOWN_ERROR') {
+        throw new Error('Could not get a sourceAccountIdentifier')
+      }
+      return {
+        sourceAccountIdentifier: sourceAccountId
+      }
+    } catch (err) {
+      this.log(
+        'error',
+        '❌❌❌ failed in getUserDataFromWebsite: ' + err.message
+      )
+      throw err
     }
   }
 
