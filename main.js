@@ -5783,21 +5783,30 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async fetch(context) {
     this.log('info', '🤖 fetch start')
+    this.log('info', '🤖 1')
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
+    this.log('info', '🤖 2')
     await this.runInWorker('checkInfosConfirmation')
+    this.log('info', '🤖 3')
     await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
+    this.log('info', '🤖 4')
     await this.clickAndWait(`a[href="${DEFAULT_PAGE_URL}"`, 'strong')
+    this.log('info', '🤖 5')
     const billsPage = await this.runInWorkerUntilTrue({
       method: 'checkBillsElement'
     })
+    this.log('info', '🤖 6')
     if (!billsPage) {
       this.log('warn', 'Cannot find a path to the bills page')
       throw new Error('Cannot find a path to bill Page, aborting execution')
     }
+    this.log('info', '🤖 7')
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
+    this.log('info', '🤖 8')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
+    this.log('info', '🤖 9')
     await Promise.race([
       this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
       this.waitForElementInWorker('.alert-icon icon-error-severe'),
@@ -5805,19 +5814,25 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         '.alert-container alert-container-sm alert-danger mb-0'
       )
     ])
+    this.log('info', '🤖 10')
     const redFrame = await this.runInWorker('checkRedFrame')
+    this.log('info', '🤖 11')
     if (redFrame !== null) {
       this.log('warn', 'Website did not load the bills')
       throw new Error('VENDOR_DOWN')
     }
+    this.log('info', '🤖 12')
     let recentPdfNumber = await this.runInWorker('getPdfNumber')
+    this.log('info', '🤖 13')
     const hasMoreBills = await this.runInWorker('getMoreBillsButton')
+    this.log('info', '🤖 14')
     if (hasMoreBills) {
       await this.clickAndWait(
         '[data-e2e="bh-more-bills"]',
         '[aria-labelledby="bp-historicBillsHistoryTitle"]'
       )
     }
+    this.log('info', '🤖 15')
     let allPdfNumber = await this.runInWorker('getPdfNumber')
     let oldPdfNumber = allPdfNumber - recentPdfNumber
     await this.convertRecentsToCozyBills(context, recentPdfNumber)
