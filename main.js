@@ -5734,7 +5734,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       const userCredentials = await this.findAndSendCredentials.bind(this)(
         loginField
       )
-      this.log('info', 'Sending user credentials to Pilot')
       this.sendToPilot({
         userCredentials
       })
@@ -5746,7 +5745,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       document.querySelector('.o-ribbon-is-connected')
     )
     if (isGoodUrl && isConnectedRibbonPresent) {
-      this.log('info', 'Check Authenticated succeeded')
       return true
     }
     return false
@@ -6043,7 +6041,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   findMoreBillsButton() {
-    this.log('info', 'Starting findMoreBillsButton')
     const button = document.querySelector('[data-e2e="bh-more-bills"]')
     if (button) return true
     else return false
@@ -6369,7 +6366,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return false
   }
   async checkBillsElement() {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.findAndClickBillsElement, {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.findAndClickBillsElement.bind(this), {
       interval: 1000,
       timeout: 30 * 1000
     })
