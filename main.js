@@ -5493,6 +5493,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(20);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_2__);
 /* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(18);
+/* eslint no-console: off */
+
+
 
 
 
@@ -5520,7 +5523,9 @@ var proxied = window.XMLHttpRequest.prototype.open
 window.XMLHttpRequest.prototype.open = function () {
   var originalResponse = this
   // Intercepting response for recent bills informations.
+  console.log('intercepted xhr', arguments[1])
   if (arguments[1].includes('/users/current/contracts')) {
+    console.log('recent bills intercepted')
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         // The response is a unique string, in order to access information parsing into JSON is needed.
@@ -5528,30 +5533,36 @@ window.XMLHttpRequest.prototype.open = function () {
         recentBills.push(jsonBills)
       }
     })
+    console.log('will return')
     return proxied.apply(this, [].slice.call(arguments))
   }
   // Intercepting response for old bills informations.
   if (arguments[1].includes('/facture/historicBills?')) {
+    console.log('old bills intercepted')
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         const jsonBills = JSON.parse(originalResponse.responseText)
         oldBills.push(jsonBills)
       }
     })
+    console.log('will return')
     return proxied.apply(this, [].slice.call(arguments))
   }
   // Intercepting user infomations for Identity object
   if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
+    console.log('user information intercepted')
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         const jsonInfos = JSON.parse(originalResponse.responseText)
         userInfos.push(jsonInfos)
       }
     })
+    console.log('will return')
     return proxied.apply(this, [].slice.call(arguments))
   }
   // Intercepting response for recent bills blobs.
   if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
+    console.log('recent bills blobs intercepted')
     originalResponse.addEventListener('readystatechange', function () {
       if (originalResponse.readyState === 4) {
         recentPromisesToConvertBlobToBase64 = []
@@ -5563,6 +5574,7 @@ window.XMLHttpRequest.prototype.open = function () {
         recentXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
 
         // In every case, always returning the original response untouched
+        console.log('will return')
         return originalResponse
       }
     })
@@ -5799,6 +5811,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       this.log('warn', 'Cannot find a path to the bills page')
       throw new Error('Cannot find a path to bill Page, aborting execution')
     }
+    this.log('info', ``)
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
     await Promise.race([
