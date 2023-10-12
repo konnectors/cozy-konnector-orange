@@ -293,7 +293,8 @@ class OrangeContentScript extends ContentScript {
     }
     await this.runInWorker('checkInfosConfirmation')
     await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
-    await this.clickAndWait(`a[href="${DEFAULT_PAGE_URL}"`, 'strong')
+    await this.goto(DEFAULT_PAGE_URL)
+    await this.waitForElementInWorker('strong')
     const billsPage = await this.runInWorkerUntilTrue({
       method: 'checkBillsElement'
     })
