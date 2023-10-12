@@ -826,8 +826,7 @@ class OrangeContentScript extends ContentScript {
     return false
   }
 
-  async checkBillsElement() {
-    this.log('info', 'checkBillsElement starts')
+  async findAndClickBillsElement() {
     const strongElements = document.querySelectorAll('strong')
     for (const element of strongElements) {
       if (element.textContent === 'Factures et paiements') {
@@ -837,6 +836,13 @@ class OrangeContentScript extends ContentScript {
       }
     }
     return false
+  }
+  async checkBillsElement() {
+    await waitFor(this.findAndClickBillsElement.bind(this), {
+      interval: 1000,
+      timeout: 30 * 1000
+    })
+    return true
   }
 
   async getFileName(date, amount, vendorRef) {
