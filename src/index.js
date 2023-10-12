@@ -114,8 +114,11 @@ class OrangeContentScript extends ContentScript {
     }
   }
 
-  async ensureAuthenticated() {
+  async ensureAuthenticated({ account }) {
     this.log('info', '🤖 ensureAuthenticated starts')
+    if (!account) {
+      await this.ensureNotAuthenticated()
+    }
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
@@ -176,8 +179,7 @@ class OrangeContentScript extends ContentScript {
         await this.tryAutoLogin(credentials, 'full')
         return true
       }
-    }
-    if (!credentials) {
+    } else {
       this.log('info', 'no credentials found, use normal user login')
       const rememberUser = await this.runInWorker('checkIfRemember')
       if (rememberUser) {
