@@ -5612,6 +5612,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async ensureAuthenticated() {
     try {
       this.log('info', '🤖 ensureAuthenticated starts')
+      await this.ensureNotAuthenticated()
       await this.navigateToLoginForm()
       const credentials = await this.getCredentials()
       await this.waitForElementInWorker('#o-ribbon')
@@ -5627,7 +5628,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         const { testEmail, type } = await this.runInWorker('getTestEmail')
         if (credentials.email === testEmail) {
           if (type === 'mail') {
-            await this.waitForElementInWorker('#o-ribbon')
             await this.tryAutoLogin(credentials, 'half')
             await this.waitForElementInWorker('#o-ribbon-right')
             const stayLogButton = await this.runInWorker('getStayLoggedButton')
@@ -5674,8 +5674,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
           await this.tryAutoLogin(credentials, 'full')
           return true
         }
-      }
-      if (!credentials) {
+      } else {
         this.log('info', 'no credentials found, use normal user login')
         const rememberUser = await this.runInWorker('checkIfRemember')
         if (rememberUser) {
