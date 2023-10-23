@@ -2,9 +2,9 @@
 
 import { ContentScript } from 'cozy-clisk/dist/contentscript'
 
-import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import Minilog from '@cozy/minilog'
 import waitFor from 'p-wait-for'
+import XhrInterceptor from './interceptor'
 
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
@@ -13,94 +13,8 @@ const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
 const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
-let recentBills = []
-let oldBills = []
-let recentPromisesToConvertBlobToBase64 = []
-let oldPromisesToConvertBlobToBase64 = []
-let recentXhrUrls = []
-let oldXhrUrls = []
-let userInfos = []
-
-// The override here is needed to intercept XHR requests made during the navigation
-// The website respond with an XHR containing a blob when asking for a pdf, so we need to get it and encode it into base64 before giving it to the pilot.
-var proxied = window.XMLHttpRequest.prototype.open
-// Overriding the open() method
-window.XMLHttpRequest.prototype.open = function () {
-  var originalResponse = this
-  // Intercepting response for recent bills informations.
-  console.log('intercepted xhr', arguments[1])
-  if (arguments[1].includes('/users/current/contracts')) {
-    console.log('recent bills intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        // The response is a unique string, in order to access information parsing into JSON is needed.
-        const jsonBills = JSON.parse(originalResponse.responseText)
-        recentBills.push(jsonBills)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting response for old bills informations.
-  if (arguments[1].includes('/facture/historicBills?')) {
-    console.log('old bills intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        const jsonBills = JSON.parse(originalResponse.responseText)
-        oldBills.push(jsonBills)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting user infomations for Identity object
-  if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
-    console.log('user information intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        const jsonInfos = JSON.parse(originalResponse.responseText)
-        userInfos.push(jsonInfos)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting response for recent bills blobs.
-  if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
-    console.log('recent bills blobs intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        recentPromisesToConvertBlobToBase64 = []
-        recentXhrUrls = []
-        // Pushing in an array the converted to base64 blob and pushing in another array it's href to match the indexes.
-        recentPromisesToConvertBlobToBase64.push(
-          blobToBase64(originalResponse.response)
-        )
-        recentXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
-
-        // In every case, always returning the original response untouched
-        console.log('will return')
-        return originalResponse
-      }
-    })
-  }
-  // Intercepting response for old bills blobs.
-  if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        oldPromisesToConvertBlobToBase64 = []
-        oldXhrUrls = []
-        oldPromisesToConvertBlobToBase64.push(
-          blobToBase64(originalResponse.response)
-        )
-        oldXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
-
-        return originalResponse
-      }
-    })
-  }
-  return proxied.apply(this, [].slice.call(arguments))
-}
+const interceptor = new XhrInterceptor()
+interceptor.init()
 
 class OrangeContentScript extends ContentScript {
   async navigateToLoginForm() {
@@ -710,25 +624,25 @@ class OrangeContentScript extends ContentScript {
     let resolvedBase64 = []
     this.log('info', 'Awaiting promises')
     const recentToBase64 = await Promise.all(
-      recentPromisesToConvertBlobToBase64
+      interceptor.recentPromisesToConvertBlobToBase64
     )
     this.log('info', 'Processing promises')
     for (let i = 0; i < recentToBase64.length; i++) {
       resolvedBase64.push({
         uri: recentToBase64[i],
-        href: recentXhrUrls[i]
+        href: interceptor.recentXhrUrls[i]
       })
     }
-    const recentBillsToAdd = recentBills[0].billsHistory.billList
+    const recentBillsToAdd = interceptor.recentBills[0].billsHistory.billList
     this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
-      phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
+      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
     // City is not always given, depending of the user and if it's an internet or mobile subscription.
     let city
-    if (userInfos[0].contracts[0].contractInstallationArea) {
-      city = userInfos[0].contracts[0].contractInstallationArea.city
+    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
+      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
       infosIdentity.city = city
     }
     await this.sendToPilot({
@@ -742,24 +656,26 @@ class OrangeContentScript extends ContentScript {
   async processingOldBill() {
     let resolvedBase64 = []
     this.log('info', 'Awaiting promises')
-    const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
+    const oldToBase64 = await Promise.all(
+      interceptor.oldPromisesToConvertBlobToBase64
+    )
     this.log('info', 'Processing promises')
     for (let i = 0; i < oldToBase64.length; i++) {
       resolvedBase64.push({
         uri: oldToBase64[i],
-        href: oldXhrUrls[i]
+        href: interceptor.oldXhrUrls[i]
       })
     }
-    const oldBillsToAdd = oldBills[0].oldBills
+    const oldBillsToAdd = interceptor.oldBills[0].oldBills
     this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
-      phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
+      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
     // City is not always given, depending of the user and if it's an internet or mobile subscription.
     let city
-    if (userInfos[0].contracts[0].contractInstallationArea) {
-      city = userInfos[0].contracts[0].contractInstallationArea.city
+    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
+      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
       infosIdentity.city = city
     }
     await this.sendToPilot({
