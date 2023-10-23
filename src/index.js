@@ -40,11 +40,9 @@ class OrangeContentScript extends ContentScript {
     }
   }
 
-  async ensureAuthenticated({ account }) {
+  async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
-    if (!account) {
-      await this.ensureNotAuthenticated()
-    }
+    await this.ensureNotAuthenticated()
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
@@ -103,6 +101,7 @@ class OrangeContentScript extends ContentScript {
         }
         await this.clickAndWait('#undefined-label', '#login')
         await this.tryAutoLogin(credentials, 'full')
+        await this.detectSoshOnlyAccount()
         return true
       }
     } else {
@@ -122,6 +121,7 @@ class OrangeContentScript extends ContentScript {
         await this.waitForElementInWorker('#login-label')
       }
       await this.waitForUserAuthentication()
+      await this.detectSoshOnlyAccount()
       return true
     }
 
@@ -575,6 +575,18 @@ class OrangeContentScript extends ContentScript {
     if (redFrame) return redFrame
     if (oldBillsRedFrame) return oldBillsRedFrame
     return null
+  }
+
+  async detectSoshOnlyAccount() {
+    const isSosh = await this.runInWorker(
+      'checkForElement',
+      `#oecs__logo[href="https://www.sosh.fr/"]`
+    )
+    if (isSosh) {
+      throw new Error(
+        'This should be an orange account. Found only sosh contracts'
+      )
+    }
   }
 
   async getTestEmail() {
