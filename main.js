@@ -5402,6 +5402,106 @@ module.exports = _defineProperty, module.exports.__esModule = true, module.expor
 "use strict";
 module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.25.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"7.20.12","babel-jest":"29.3.1","babel-preset-cozy-app":"2.0.4","jest":"29.3.1","jest-environment-jsdom":"29.3.1","typescript":"4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^41.2.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^5.0.2","post-me":"^0.4.5"},"gitHead":"31279897cf81f86bb64cf14f2359d8c64a3859c9"}');
 
+/***/ }),
+/* 46 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (/* binding */ XhrInterceptor)
+/* harmony export */ });
+/* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(41);
+
+
+class XhrInterceptor {
+  constructor() {
+    this.recentBills = []
+    this.oldBills = []
+    this.recentPromisesToConvertBlobToBase64 = []
+    this.oldPromisesToConvertBlobToBase64 = []
+    this.recentXhrUrls = []
+    this.oldXhrUrls = []
+    this.userInfos = []
+  }
+
+  init() {
+    const self = this
+    // The override here is needed to intercept XHR requests made during the navigation
+    // The website respond with an XHR containing a blob when asking for a pdf, so we need to get it and encode it into base64 before giving it to the pilot.
+    var proxied = window.XMLHttpRequest.prototype.open
+    // Overriding the open() method
+    window.XMLHttpRequest.prototype.open = function () {
+      var originalResponse = this
+      // Intercepting response for recent bills informations.
+      if (arguments[1].includes('/users/current/contracts')) {
+        originalResponse.addEventListener('readystatechange', function () {
+          if (originalResponse.readyState === 4) {
+            // The response is a unique string, in order to access information parsing into JSON is needed.
+            const jsonBills = JSON.parse(originalResponse.responseText)
+            self.recentBills.push(jsonBills)
+          }
+        })
+        return proxied.apply(this, [].slice.call(arguments))
+      }
+      // Intercepting response for old bills informations.
+      if (arguments[1].includes('/facture/historicBills?')) {
+        originalResponse.addEventListener('readystatechange', function () {
+          if (originalResponse.readyState === 4) {
+            const jsonBills = JSON.parse(originalResponse.responseText)
+            self.oldBills.push(jsonBills)
+          }
+        })
+        return proxied.apply(this, [].slice.call(arguments))
+      }
+      // Intercepting user infomations for Identity object
+      if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
+        originalResponse.addEventListener('readystatechange', function () {
+          if (originalResponse.readyState === 4) {
+            const jsonInfos = JSON.parse(originalResponse.responseText)
+            self.userInfos.push(jsonInfos)
+          }
+        })
+        return proxied.apply(this, [].slice.call(arguments))
+      }
+      // Intercepting response for recent bills blobs.
+      if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
+        originalResponse.addEventListener('readystatechange', function () {
+          if (originalResponse.readyState === 4) {
+            self.recentPromisesToConvertBlobToBase64 = []
+            self.recentXhrUrls = []
+            // Pushing in an array the converted to base64 blob and pushing in another array it's href to match the indexes.
+            self.recentPromisesToConvertBlobToBase64.push(
+              (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_0__.blobToBase64)(originalResponse.response)
+            )
+            self.recentXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
+
+            // In every case, always returning the original response untouched
+            return originalResponse
+          }
+        })
+      }
+      // Intercepting response for old bills blobs.
+      if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
+        originalResponse.addEventListener('readystatechange', function () {
+          if (originalResponse.readyState === 4) {
+            self.oldPromisesToConvertBlobToBase64 = []
+            self.oldXhrUrls = []
+            self.oldPromisesToConvertBlobToBase64.push(
+              (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_0__.blobToBase64)(originalResponse.response)
+            )
+            self.oldXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
+
+            return originalResponse
+          }
+        })
+      }
+      return proxied.apply(this, [].slice.call(arguments))
+    }
+  }
+}
+
+
 /***/ })
 /******/ 	]);
 /************************************************************************/
@@ -5489,10 +5589,10 @@ var __webpack_exports__ = {};
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
-/* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(41);
-/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(20);
-/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(18);
+/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
+/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
+/* harmony import */ var _interceptor__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(46);
 /* eslint no-console: off */
 
 
@@ -5501,101 +5601,15 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-const log = _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default()('ContentScript')
-_cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default().enable('orangeCCC')
+const log = _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default()('ContentScript')
+_cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default().enable('orangeCCC')
 
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
 const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
 
-let recentBills = []
-let oldBills = []
-let recentPromisesToConvertBlobToBase64 = []
-let oldPromisesToConvertBlobToBase64 = []
-let recentXhrUrls = []
-let oldXhrUrls = []
-let userInfos = []
-
-// The override here is needed to intercept XHR requests made during the navigation
-// The website respond with an XHR containing a blob when asking for a pdf, so we need to get it and encode it into base64 before giving it to the pilot.
-var proxied = window.XMLHttpRequest.prototype.open
-// Overriding the open() method
-window.XMLHttpRequest.prototype.open = function () {
-  var originalResponse = this
-  // Intercepting response for recent bills informations.
-  console.log('intercepted xhr', arguments[1])
-  if (arguments[1].includes('/users/current/contracts')) {
-    console.log('recent bills intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        // The response is a unique string, in order to access information parsing into JSON is needed.
-        const jsonBills = JSON.parse(originalResponse.responseText)
-        recentBills.push(jsonBills)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting response for old bills informations.
-  if (arguments[1].includes('/facture/historicBills?')) {
-    console.log('old bills intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        const jsonBills = JSON.parse(originalResponse.responseText)
-        oldBills.push(jsonBills)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting user infomations for Identity object
-  if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
-    console.log('user information intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        const jsonInfos = JSON.parse(originalResponse.responseText)
-        userInfos.push(jsonInfos)
-      }
-    })
-    console.log('will return')
-    return proxied.apply(this, [].slice.call(arguments))
-  }
-  // Intercepting response for recent bills blobs.
-  if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
-    console.log('recent bills blobs intercepted')
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        recentPromisesToConvertBlobToBase64 = []
-        recentXhrUrls = []
-        // Pushing in an array the converted to base64 blob and pushing in another array it's href to match the indexes.
-        recentPromisesToConvertBlobToBase64.push(
-          (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(originalResponse.response)
-        )
-        recentXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
-
-        // In every case, always returning the original response untouched
-        console.log('will return')
-        return originalResponse
-      }
-    })
-  }
-  // Intercepting response for old bills blobs.
-  if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
-    originalResponse.addEventListener('readystatechange', function () {
-      if (originalResponse.readyState === 4) {
-        oldPromisesToConvertBlobToBase64 = []
-        oldXhrUrls = []
-        oldPromisesToConvertBlobToBase64.push(
-          (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(originalResponse.response)
-        )
-        oldXhrUrls.push(originalResponse.__zone_symbol__xhrURL)
-
-        return originalResponse
-      }
-    })
-  }
-  return proxied.apply(this, [].slice.call(arguments))
-}
+const interceptor = new _interceptor__WEBPACK_IMPORTED_MODULE_3__["default"]()
+interceptor.init()
 
 class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__.ContentScript {
   async navigateToLoginForm() {
@@ -5621,11 +5635,9 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
   }
 
-  async ensureAuthenticated({ account }) {
+  async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
-    if (!account) {
-      await this.ensureNotAuthenticated()
-    }
+    await this.ensureNotAuthenticated()
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     await this.waitForElementInWorker('#o-ribbon')
@@ -5684,6 +5696,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         }
         await this.clickAndWait('#undefined-label', '#login')
         await this.tryAutoLogin(credentials, 'full')
+        await this.detectSoshOnlyAccount()
         return true
       }
     } else {
@@ -5703,6 +5716,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         await this.waitForElementInWorker('#login-label')
       }
       await this.waitForUserAuthentication()
+      await this.detectSoshOnlyAccount()
       return true
     }
 
@@ -6158,6 +6172,18 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return null
   }
 
+  async detectSoshOnlyAccount() {
+    const isSosh = await this.runInWorker(
+      'checkForElement',
+      `#oecs__logo[href="https://www.sosh.fr/"]`
+    )
+    if (isSosh) {
+      throw new Error(
+        'This should be an orange account. Found only sosh contracts'
+      )
+    }
+  }
+
   async getTestEmail() {
     this.log('info', 'Getting in getTestEmail')
     const mail = document.querySelector(
@@ -6205,25 +6231,25 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     let resolvedBase64 = []
     this.log('info', 'Awaiting promises')
     const recentToBase64 = await Promise.all(
-      recentPromisesToConvertBlobToBase64
+      interceptor.recentPromisesToConvertBlobToBase64
     )
     this.log('info', 'Processing promises')
     for (let i = 0; i < recentToBase64.length; i++) {
       resolvedBase64.push({
         uri: recentToBase64[i],
-        href: recentXhrUrls[i]
+        href: interceptor.recentXhrUrls[i]
       })
     }
-    const recentBillsToAdd = recentBills[0].billsHistory.billList
+    const recentBillsToAdd = interceptor.recentBills[0].billsHistory.billList
     this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
-      phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
+      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
     // City is not always given, depending of the user and if it's an internet or mobile subscription.
     let city
-    if (userInfos[0].contracts[0].contractInstallationArea) {
-      city = userInfos[0].contracts[0].contractInstallationArea.city
+    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
+      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
       infosIdentity.city = city
     }
     await this.sendToPilot({
@@ -6237,24 +6263,26 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async processingOldBill() {
     let resolvedBase64 = []
     this.log('info', 'Awaiting promises')
-    const oldToBase64 = await Promise.all(oldPromisesToConvertBlobToBase64)
+    const oldToBase64 = await Promise.all(
+      interceptor.oldPromisesToConvertBlobToBase64
+    )
     this.log('info', 'Processing promises')
     for (let i = 0; i < oldToBase64.length; i++) {
       resolvedBase64.push({
         uri: oldToBase64[i],
-        href: oldXhrUrls[i]
+        href: interceptor.oldXhrUrls[i]
       })
     }
-    const oldBillsToAdd = oldBills[0].oldBills
+    const oldBillsToAdd = interceptor.oldBills[0].oldBills
     this.log('info', 'billsArray ready, Sending to pilot')
     const infosIdentity = {
-      phoneNumber: userInfos[0].contracts[0].telco.publicNumber,
+      phoneNumber: interceptor.userInfos[0].contracts[0].telco.publicNumber,
       mail: document.querySelector('.o-identityLayer-detail').innerHTML
     }
     // City is not always given, depending of the user and if it's an internet or mobile subscription.
     let city
-    if (userInfos[0].contracts[0].contractInstallationArea) {
-      city = userInfos[0].contracts[0].contractInstallationArea.city
+    if (interceptor.userInfos[0].contracts[0].contractInstallationArea) {
+      city = interceptor.userInfos[0].contracts[0].contractInstallationArea.city
       infosIdentity.city = city
     }
     await this.sendToPilot({
@@ -6319,7 +6347,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async waitForCaptchaResolution() {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.checkCaptchaResolution, {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(this.checkCaptchaResolution, {
       interval: 1000,
       timeout: 60 * 1000
     })
@@ -6346,7 +6374,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return false
   }
   async checkBillsElement() {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.findAndClickBillsElement.bind(this), {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(this.findAndClickBillsElement.bind(this), {
       interval: 1000,
       timeout: 30 * 1000
     })
@@ -6360,7 +6388,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async waitForBillsElement() {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.checkBillsElement, {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(this.checkBillsElement, {
       interval: 1000,
       timeout: 30 * 1000
     })
