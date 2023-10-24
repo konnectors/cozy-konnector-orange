@@ -5626,6 +5626,23 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       this.waitForElementInWorker('div[class*="captcha_responseContainer"]'),
       this.waitForElementInWorker('#undefined-label')
     ])
+    const loginLabelPresent = await this.isElementInWorker('#login-label')
+    this.log('info', 'loginLabelPresent: ' + loginLabelPresent)
+    const passwordLabelPresent = await this.isElementInWorker('#password-label')
+    this.log('info', 'passwordLabelPresent: ' + passwordLabelPresent)
+    const keepConnectedPresent = await this.isElementInWorker(
+      'button[data-testid="button-keepconnected"]'
+    )
+    this.log('info', 'keepConnectedPresent: ' + keepConnectedPresent)
+    const captchaPresent = await this.isElementInWorker(
+      'div[class*="captcha_responseContainer"]'
+    )
+    this.log('info', 'captchaPresent: ' + captchaPresent)
+    const undefinedLabelPresent = await this.isElementInWorker(
+      '#undefined-label'
+    )
+    this.log('info', 'undefinedLabelPresent: ' + undefinedLabelPresent)
+
     const { askForCaptcha, captchaUrl } = await this.runInWorker(
       'checkForCaptcha'
     )
@@ -5633,114 +5650,33 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       this.log('info', 'captcha found, waiting for resolution')
       await this.waitForUserAction(captchaUrl)
     }
+
+    // always choose to login on another account
+    const isShowingKeepConnected = await this.isElementInWorker(
+      'button[data-testid="button-keepconnected"]'
+    )
+    this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
+    if (isShowingKeepConnected) {
+      await this.clickAndWait('#changeAccountLink', '#undefined-label')
+    }
+
+    if (await this.isElementInWorker('#undefined-label')) {
+      await this.clickAndWait('#undefined-label', '#login-label')
+    }
   }
 
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
-    await this.ensureNotAuthenticated()
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
-    await this.waitForElementInWorker('#o-ribbon')
     if (credentials) {
       this.log('info', 'found credentials, processing')
-      await this.waitForElementInWorker('#o-ribbon')
-      await Promise.race([
-        this.waitForElementInWorker('p[data-testid="selected-account-login"]'),
-        this.waitForElementInWorker('#undefined-label')
-      ])
-      const { testEmail, type } = await this.runInWorker('getTestEmail')
-      if (credentials.email === testEmail) {
-        if (type === 'mail') {
-          await this.waitForElementInWorker('#o-ribbon')
-          await this.tryAutoLogin(credentials, 'half')
-          await this.waitForElementInWorker('#o-ribbon-right')
-          const stayLogButton = await this.runInWorker('getStayLoggedButton')
-          if (stayLogButton != null) {
-            stayLogButton.click()
-            await this.waitForElementInWorker(
-              'div[class="o-ribbon-is-connected"]'
-            )
-            return true
-          } else {
-            await this.waitForElementInWorker(
-              'div[class="o-ribbon-is-connected"]'
-            )
-            return true
-          }
-        }
-        if (type === 'mailList') {
-          this.log('info', 'found credentials, trying to autoLog')
-          const mailSelector = `a[id="choose-account-${testEmail}"]`
-          await this.runInWorker('click', mailSelector)
-          await this.tryAutoLogin(credentials, 'half')
-          return true
-        }
-      }
-
-      if (credentials.email != testEmail) {
-        this.log('info', 'getting in different testEmail conditions')
-        const isChangeAccountPresent = await this.runInWorker(
-          'isElementPresent',
-          '#changeAccountLink'
-        )
-        const isUndefinedPresent = await this.runInWorker(
-          'isElementPresent',
-          '#undefined-label'
-        )
-        if (isChangeAccountPresent) {
-          await this.clickAndWait('#changeAccountLink', '#undefined-label')
-        } else if (!isUndefinedPresent) {
-          throw new Error(
-            'Unexpected case where neither changeaccount link or undefined account link are presents'
-          )
-        }
-        await this.clickAndWait('#undefined-label', '#login')
-        await this.tryAutoLogin(credentials, 'full')
-        await this.detectSoshOnlyAccount()
-        return true
-      }
+      await this.tryAutoLogin(credentials)
     } else {
       this.log('info', 'no credentials found, use normal user login')
-      const rememberUser = await this.runInWorker('checkIfRemember')
-      if (rememberUser) {
-        this.log('info', 'Already visited')
-        await this.clickAndWait('#changeAccountLink', '#undefined-label')
-        await this.clickAndWait('#undefined-label', '#login')
-        await this.waitForUserAuthentication()
-        return true
-      }
-      const isAccountListPage = await this.runInWorker('checkAccountListPage')
-      if (isAccountListPage) {
-        this.log('info', 'Webview on accountsList page, go to first login step')
-        await this.runInWorker('click', '#undefined-label')
-        await this.waitForElementInWorker('#login-label')
-      }
       await this.waitForUserAuthentication()
-      await this.detectSoshOnlyAccount()
-      return true
     }
-
-    this.log('warn', 'Not authenticated')
-    throw new Error('LOGIN_FAILED')
-  }
-
-  async ensureNotAuthenticated() {
-    this.log('info', '🤖 ensureNotAuthenticated starts')
-    await this.navigateToLoginForm()
-    const authenticated = await this.runInWorker('checkAuthenticated')
-    if (!authenticated) {
-      return true
-    }
-    if (
-      document.querySelector(
-        'button[data-oevent-action="clic_rester_identifie"]'
-      )
-    ) {
-      await this.runInWorker('click', '#changeAccountLink')
-      await this.waitForElementInWorker('#undefined-label')
-      await this.runInWorker('click', '#undefined-label')
-      await this.waitForElementInWorker('#login-label')
-    }
+    await this.detectSoshOnlyAccount()
   }
 
   async checkAuthenticated() {
@@ -5781,32 +5717,40 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     })
   }
 
-  async tryAutoLogin(credentials, type) {
+  async tryAutoLogin(credentials) {
     this.log('info', 'Trying autologin')
-    await this.autoLogin(credentials, type)
+    await this.autoLogin(credentials)
   }
 
-  async autoLogin(credentials, type) {
+  async autoLogin(credentials) {
     this.log('info', 'Autologin start')
     const emailSelector = '#login'
     const passwordInputSelector = '#password'
-    const loginButton = '#btnSubmit'
-    if (type === 'half') {
-      this.log('info', 'wait for password field')
-      await this.waitForElementInWorker(passwordInputSelector)
-      await this.runInWorker('fillingForm', credentials)
-
-      await this.runInWorker('click', loginButton)
-      await this.waitForElementInWorker('#o-ribbon')
-      return true
-    }
+    const loginButtonSelector = '#btnSubmit'
     await this.waitForElementInWorker(emailSelector)
     await this.runInWorker('fillingForm', credentials)
-    await this.runInWorker('click', loginButton)
-    this.log('info', 'wait for password field')
-    await this.waitForElementInWorker(passwordInputSelector)
+    await this.runInWorker('click', loginButtonSelector)
+
+    await Promise.race([
+      this.waitForElementInWorker('button[data-testid="button-keepconnected"]'),
+      this.waitForElementInWorker(passwordInputSelector)
+    ])
+
+    const isShowingKeepConnected = await this.isElementInWorker(
+      'button[data-testid="button-keepconnected"]'
+    )
+    this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
+
+    if (isShowingKeepConnected) {
+      await this.runInWorker(
+        'click',
+        'button[data-testid="button-keepconnected"]'
+      )
+      return
+    }
+
     await this.runInWorker('fillingForm', credentials)
-    await this.runInWorker('click', loginButton)
+    await this.runInWorker('click', loginButtonSelector)
   }
 
   async fetch(context) {
@@ -5814,10 +5758,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
-    await this.runInWorker('checkInfosConfirmation')
-    await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
-    await this.goto(DEFAULT_PAGE_URL)
-    await this.waitForElementInWorker('strong')
     const billsPage = await this.runInWorkerUntilTrue({
       method: 'checkBillsElement'
     })
@@ -6070,14 +6010,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return buttons.length
   }
 
-  findStayLoggedButton() {
-    this.log('info', 'Starting findStayLoggedButton')
-    const button = document.querySelector(
-      'button[data-testid="button-keepconnected"]'
-    )
-    return button
-  }
-
   waitForRecentPdfClicked(i) {
     let recentPdfs = document.querySelectorAll(
       '[aria-labelledby="bp-billsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]'
@@ -6173,10 +6105,15 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async detectSoshOnlyAccount() {
+    await this.runInWorker('checkInfosConfirmation')
+    await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
+    await this.goto(DEFAULT_PAGE_URL)
+    await this.waitForElementInWorker('strong')
     const isSosh = await this.runInWorker(
       'checkForElement',
       `#oecs__logo[href="https://www.sosh.fr/"]`
     )
+    this.log('info', 'isSosh ' + isSosh)
     if (isSosh) {
       throw new Error(
         'This should be an orange account. Found only sosh contracts'
@@ -6219,12 +6156,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     this.log('info', 'Getting in getPdfNumber')
     let pdfNumber = this.findPdfNumber()
     return pdfNumber
-  }
-
-  async getStayLoggedButton() {
-    this.log('info', 'Starting getStayLoggedButton')
-    const button = this.findStayLoggedButton()
-    return button
   }
 
   async processingRecentBill() {
@@ -6410,7 +6341,6 @@ connector
       'getPdfNumber',
       'waitForRecentPdfClicked',
       'waitForOldPdfClicked',
-      'getStayLoggedButton',
       'checkIfRemember',
       'checkInfosConfirmation',
       'checkForCaptcha',
