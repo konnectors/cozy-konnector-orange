@@ -597,6 +597,7 @@ var ContentScript = /*#__PURE__*/function () {
      * @param {string} selector - css selector we are waiting for
      * @param {object} options - options object
      * @param {number} [options.timeout] - timeout in ms. Will default to 30s
+     * @param {string} [options.includesText] - only select elements with the given text as innerText
      */
 
   }, {
@@ -615,7 +616,9 @@ var ContentScript = /*#__PURE__*/function () {
                 return this.runInWorkerUntilTrue({
                   method: 'waitForElementNoReload',
                   timeout: options === null || options === void 0 ? void 0 : options.timeout,
-                  args: [selector]
+                  args: [selector, {
+                    includesText: options.includesText
+                  }]
                 });
 
               case 4:
@@ -643,18 +646,21 @@ var ContentScript = /*#__PURE__*/function () {
     key: "isElementInWorker",
     value: function () {
       var _isElementInWorker = (0, _asyncToGenerator2.default)( /*#__PURE__*/_regenerator.default.mark(function _callee10(selector) {
+        var options,
+            _args10 = arguments;
         return _regenerator.default.wrap(function _callee10$(_context10) {
           while (1) {
             switch (_context10.prev = _context10.next) {
               case 0:
+                options = _args10.length > 1 && _args10[1] !== undefined ? _args10[1] : {};
                 this.onlyIn(PILOT_TYPE, 'isElementInWorker');
-                _context10.next = 3;
-                return this.runInWorker('checkForElement', selector);
-
-              case 3:
-                return _context10.abrupt("return", _context10.sent);
+                _context10.next = 4;
+                return this.runInWorker('checkForElement', selector, options);
 
               case 4:
+                return _context10.abrupt("return", _context10.sent);
+
+              case 5:
               case "end":
                 return _context10.stop();
             }
@@ -672,6 +678,8 @@ var ContentScript = /*#__PURE__*/function () {
      * Wait for a dom element to be present on the page. This won't resolve if the page reloads
      *
      * @param {string} selector - css selector we are waiting for
+     * @param {object} [options] - options object
+     * @param {string} [options.includesText] - only select elements wich include the given text as innerText
      * @returns {Promise.<true>} - Returns true when ready
      */
 
@@ -679,28 +687,33 @@ var ContentScript = /*#__PURE__*/function () {
     key: "waitForElementNoReload",
     value: function () {
       var _waitForElementNoReload = (0, _asyncToGenerator2.default)( /*#__PURE__*/_regenerator.default.mark(function _callee11(selector) {
+        var _this4 = this;
+
+        var options,
+            _args11 = arguments;
         return _regenerator.default.wrap(function _callee11$(_context11) {
           while (1) {
             switch (_context11.prev = _context11.next) {
               case 0:
+                options = _args11.length > 1 && _args11[1] !== undefined ? _args11[1] : {};
                 this.onlyIn(WORKER_TYPE, 'waitForElementNoReload');
 
                 _log.debug('waitForElementNoReload', selector);
 
-                _context11.next = 4;
+                _context11.next = 5;
                 return (0, _pWaitFor.default)(function () {
-                  return Boolean(document.querySelector(selector));
+                  return _this4.checkForElement(selector, options);
                 }, {
                   timeout: {
                     milliseconds: DEFAULT_WAIT_FOR_ELEMENT_TIMEOUT,
-                    message: new _pWaitFor.TimeoutError("waitForElementNoReload ".concat(selector, " timed out after ").concat(DEFAULT_WAIT_FOR_ELEMENT_TIMEOUT, "ms"))
+                    message: new _pWaitFor.TimeoutError("waitForElementNoReload ".concat(selector).concat(options !== null && options !== void 0 && options.includesText ? ' "' + options.includesText + '"' : '', " timed out after ").concat(DEFAULT_WAIT_FOR_ELEMENT_TIMEOUT, "ms"))
                   }
                 });
 
-              case 4:
+              case 5:
                 return _context11.abrupt("return", true);
 
-              case 5:
+              case 6:
               case "end":
                 return _context11.stop();
             }
@@ -718,6 +731,8 @@ var ContentScript = /*#__PURE__*/function () {
      * Check if a dom element is present on the page.
      *
      * @param {string} selector - css selector we are checking for
+     * @param {object} [options] - options object
+     * @param {string} [options.includesText] - only select elements with the given text as innerText
      * @returns {Promise<boolean>} - Returns true or false
      */
 
@@ -725,15 +740,15 @@ var ContentScript = /*#__PURE__*/function () {
     key: "checkForElement",
     value: function () {
       var _checkForElement = (0, _asyncToGenerator2.default)( /*#__PURE__*/_regenerator.default.mark(function _callee12(selector) {
+        var options,
+            _args12 = arguments;
         return _regenerator.default.wrap(function _callee12$(_context12) {
           while (1) {
             switch (_context12.prev = _context12.next) {
               case 0:
+                options = _args12.length > 1 && _args12[1] !== undefined ? _args12[1] : {};
                 this.onlyIn(WORKER_TYPE, 'checkForElement');
-
-                _log.debug('checkForElement', selector);
-
-                return _context12.abrupt("return", Boolean(document.querySelector(selector)));
+                return _context12.abrupt("return", Boolean(this.selectElement(selector, options)));
 
               case 3:
               case "end":
@@ -749,29 +764,68 @@ var ContentScript = /*#__PURE__*/function () {
 
       return checkForElement;
     }()
+    /**
+     * Select a dom element with given selector and options
+     *
+     * @param {string} selector - css selector of the element
+     * @param {object} [options] - options object
+     * @param {string} [options.includesText] - only select element with the given text as innerText
+     * @returns {object|null} - Returns the selected dom element or null
+     */
+
+  }, {
+    key: "selectElement",
+    value: function selectElement(selector) {
+      var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+      this.onlyIn(WORKER_TYPE, 'selectElement');
+
+      if (options !== null && options !== void 0 && options.includesText && typeof options.includesText === 'string' && options.includesText !== undefined) {
+        return Array.from(document.querySelectorAll(selector)).find(function (element) {
+          var _element$innerHTML;
+
+          return (// @ts-ignore Argument of type 'string | undefined' is not assignable to parameter of type 'string'.  Type 'undefined' is not assignable to type 'string'.ts(2345)
+            (_element$innerHTML = element.innerHTML) === null || _element$innerHTML === void 0 ? void 0 : _element$innerHTML.includes(options.includesText)
+          );
+        });
+      } else {
+        return document.querySelector(selector);
+      }
+    }
+    /**
+     * Click on a given element
+     *
+     * @param {string} selector - css selector of the element
+     * @param {object} [options] - options object
+     * @param {string} [options.includesText] - only select element with the given text as innerText
+     * @returns {Promise<void>}
+     */
+
   }, {
     key: "click",
     value: function () {
       var _click = (0, _asyncToGenerator2.default)( /*#__PURE__*/_regenerator.default.mark(function _callee13(selector) {
-        var elem;
+        var options,
+            elem,
+            _args13 = arguments;
         return _regenerator.default.wrap(function _callee13$(_context13) {
           while (1) {
             switch (_context13.prev = _context13.next) {
               case 0:
+                options = _args13.length > 1 && _args13[1] !== undefined ? _args13[1] : {};
                 this.onlyIn(WORKER_TYPE, 'click');
-                elem = document.querySelector(selector);
+                elem = this.selectElement(selector, options);
 
                 if (elem) {
-                  _context13.next = 4;
+                  _context13.next = 5;
                   break;
                 }
 
                 throw new Error("click: No DOM element is matched with the ".concat(selector, " selector"));
 
-              case 4:
+              case 5:
                 elem.click();
 
-              case 5:
+              case 6:
               case "end":
                 return _context13.stop();
             }
@@ -785,6 +839,14 @@ var ContentScript = /*#__PURE__*/function () {
 
       return click;
     }()
+    /**
+     * Click on a given element and wait for another given element to be displayed on screen
+     *
+     * @param {string} elementToClick
+     * @param {string} elementToWait
+     * @returns {Promise<void>}
+     */
+
   }, {
     key: "clickAndWait",
     value: function () {
@@ -833,7 +895,7 @@ var ContentScript = /*#__PURE__*/function () {
             switch (_context15.prev = _context15.next) {
               case 0:
                 this.onlyIn(WORKER_TYPE, 'fillText');
-                elem = document.querySelector(selector);
+                elem = this.selectElement(selector);
 
                 if (elem) {
                   _context15.next = 4;
@@ -1004,7 +1066,7 @@ var ContentScript = /*#__PURE__*/function () {
      *
      * @param {import("cozy-client").QueryDefinition} queryDefinition - CozyClient query definition object
      * @param {import('cozy-client/types/types').QueryOptions} options - CozyClient query options
-     * @returns {Promise<import('cozy-client/types/types').QueryResult>}
+     * @returns {Promise<import('cozy-client/types/types').QueryResult>} Returns the list of documents
      */
 
   }, {
@@ -5400,7 +5462,7 @@ module.exports = _defineProperty, module.exports.__esModule = true, module.expor
 /***/ ((module) => {
 
 "use strict";
-module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.25.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"7.20.12","babel-jest":"29.3.1","babel-preset-cozy-app":"2.0.4","jest":"29.3.1","jest-environment-jsdom":"29.3.1","typescript":"4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^41.2.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^5.0.2","post-me":"^0.4.5"},"gitHead":"31279897cf81f86bb64cf14f2359d8c64a3859c9"}');
+module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.26.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"7.20.12","babel-jest":"29.3.1","babel-preset-cozy-app":"2.0.4","jest":"29.3.1","jest-environment-jsdom":"29.3.1","typescript":"4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^41.2.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^5.0.2","post-me":"^0.4.5"},"gitHead":"59a8bdc13e872f405241566b39d934858e38e80a"}');
 
 /***/ }),
 /* 46 */
@@ -5434,7 +5496,7 @@ class XhrInterceptor {
     window.XMLHttpRequest.prototype.open = function () {
       var originalResponse = this
       // Intercepting response for recent bills informations.
-      if (arguments[1].includes('/users/current/contracts')) {
+      if (arguments[1]?.includes('/users/current/contracts')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             // The response is a unique string, in order to access information parsing into JSON is needed.
@@ -5445,7 +5507,7 @@ class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting response for old bills informations.
-      if (arguments[1].includes('/facture/historicBills?')) {
+      if (arguments[1]?.includes('/facture/historicBills?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonBills = JSON.parse(originalResponse.responseText)
@@ -5455,7 +5517,7 @@ class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting user infomations for Identity object
-      if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
+      if (arguments[1]?.includes('ecd_wp/portfoliomanager/portfolio?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonInfos = JSON.parse(originalResponse.responseText)
@@ -5465,7 +5527,7 @@ class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting response for recent bills blobs.
-      if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
+      if (arguments[1]?.includes('facture/v1.0/pdf?billDate')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             self.recentPromisesToConvertBlobToBase64 = []
@@ -5482,7 +5544,7 @@ class XhrInterceptor {
         })
       }
       // Intercepting response for old bills blobs.
-      if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
+      if (arguments[1]?.includes('ecd_wp/facture/historicPDF?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             self.oldPromisesToConvertBlobToBase64 = []
@@ -5500,7 +5562,7 @@ class XhrInterceptor {
     }
 
     // Intercepting more infos for Identity object
-    if (arguments[1].includes('ecd_wp/account/identification')) {
+    if (arguments[1]?.includes('ecd_wp/account/identification')) {
       self.originalResponse.addEventListener('readystatechange', function () {
         if (self.originalResponse.readyState === 4) {
           const jsonInfos = JSON.parse(self.originalResponse.responseText)
@@ -5510,7 +5572,7 @@ class XhrInterceptor {
       return proxied.apply(this, [].slice.call(arguments))
     }
     // Intercepting billingAddress infos for Identity object
-    if (arguments[1].includes('ecd_wp/account/billingAddresses')) {
+    if (arguments[1]?.includes('ecd_wp/account/billingAddresses')) {
       self.originalResponse.addEventListener('readystatechange', function () {
         if (self.originalResponse.readyState === 4) {
           const jsonInfos = JSON.parse(self.originalResponse.responseText)
@@ -5819,7 +5881,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
-    await this.saveIdentity(this.store.infosIdentity)
+    await this.saveIdentity({ contact: this.store.infosIdentity })
 
     await this.clickAndWait(
       '#o-identityLink',
@@ -5840,13 +5902,17 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     this.log('info', 'navigateToPersonalInfos starts')
     await this.clickAndWait(
       '#o-identityLink',
-      'a[data-oevent-action="gerervotrecompte"]'
+      'a[data-oevent-action="infospersonnelles"]'
     )
-    await this.clickAndWait(
-      'a[data-oevent-action="gerervotrecompte"]',
-      'a[href="/compte/infos-perso"]'
-    )
-    await this.runInWorker('click', 'a[href="/compte/infos-perso"]')
+
+    await this.runInWorker('click', 'a[data-oevent-action="infospersonnelles"]')
+
+    await this.waitForElementInWorker('span', {
+      includesText: 'Infos personnelles'
+    })
+    await this.runInWorker('click', 'span', {
+      includesText: 'Infos personnelles'
+    })
     await Promise.all([
       this.waitForElementInWorker('a[href="/compte/etat-civil"]'),
       this.waitForElementInWorker(
@@ -5858,17 +5924,23 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async getIdentity() {
     this.log('info', 'getIdentity starts')
-    const addressInfos = interceptor.userInfos[2][0]
-    const phoneNumber = interceptor.userInfos[0].contracts[0].telco.publicNumber
-    const houseNumber = addressInfos.postalAddress.streetNumber.number
-    const street = `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`
-    const postCode = addressInfos.postalAddress.postalCode
-    const city = addressInfos.postalAddress.cityName
-    const formattedAddress = `${houseNumber} ${street} ${postCode} ${city}`
+    const addressInfos = interceptor.userInfos[2]?.[0]
+    const phoneNumber =
+      interceptor.userInfos[0]?.contracts?.[0]?.telco?.publicNumber
+    const address = []
+    if (addressInfos) {
+      address.push({
+        houseNumber: addressInfos.postalAddress.streetNumber.number,
+        street: `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`,
+        postCode: addressInfos.postalAddress.postalCode,
+        city: addressInfos.postalAddress.cityName,
+        formattedAddress: `${address.houseNumber} ${address.street} ${address.postCode} ${address.city}`
+      })
+    }
     const infosIdentity = {
       name: {
-        givenName: interceptor.userInfos[0].contracts[0].holder.firstName,
-        lastName: interceptor.userInfos[0].contracts[0].holder.lastName
+        givenName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.firstName,
+        lastName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.lastName
       },
       phone: [
         {
@@ -5876,17 +5948,10 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
           number: phoneNumber
         }
       ],
-      mail: interceptor.userInfos[1].contactInformation.email.address,
-      address: [
-        {
-          formattedAddress,
-          houseNumber,
-          street,
-          postCode,
-          city
-        }
-      ]
+      mail: interceptor.userInfos[1]?.contactInformation?.email?.address,
+      address
     }
+
     await this.sendToPilot({
       infosIdentity
     })
@@ -6298,10 +6363,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return
   }
 
-  isElementPresent(selector) {
-    return Boolean(document.querySelector(selector))
-  }
-
   checkForCaptcha() {
     const captchaContainer = document.querySelector(
       'div[class*="captcha_responseContainer"]'
@@ -6393,11 +6454,11 @@ connector
       'checkIfRemember',
       'checkInfosConfirmation',
       'checkForCaptcha',
-      'isElementPresent',
       'waitForCaptchaResolution',
       'checkAccountListPage',
       'checkBillsElement',
-      'getFileName'
+      'getFileName',
+      'getIdentity'
     ]
   })
   .catch(err => {
