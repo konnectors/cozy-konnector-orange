@@ -20,7 +20,7 @@ export default class XhrInterceptor {
     window.XMLHttpRequest.prototype.open = function () {
       var originalResponse = this
       // Intercepting response for recent bills informations.
-      if (arguments[1].includes('/users/current/contracts')) {
+      if (arguments[1]?.includes('/users/current/contracts')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             // The response is a unique string, in order to access information parsing into JSON is needed.
@@ -31,7 +31,7 @@ export default class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting response for old bills informations.
-      if (arguments[1].includes('/facture/historicBills?')) {
+      if (arguments[1]?.includes('/facture/historicBills?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonBills = JSON.parse(originalResponse.responseText)
@@ -41,7 +41,7 @@ export default class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting user infomations for Identity object
-      if (arguments[1].includes('ecd_wp/portfoliomanager/portfolio?')) {
+      if (arguments[1]?.includes('ecd_wp/portfoliomanager/portfolio?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonInfos = JSON.parse(originalResponse.responseText)
@@ -51,7 +51,7 @@ export default class XhrInterceptor {
         return proxied.apply(this, [].slice.call(arguments))
       }
       // Intercepting response for recent bills blobs.
-      if (arguments[1].includes('facture/v1.0/pdf?billDate')) {
+      if (arguments[1]?.includes('facture/v1.0/pdf?billDate')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             self.recentPromisesToConvertBlobToBase64 = []
@@ -68,7 +68,7 @@ export default class XhrInterceptor {
         })
       }
       // Intercepting response for old bills blobs.
-      if (arguments[1].includes('ecd_wp/facture/historicPDF?')) {
+      if (arguments[1]?.includes('ecd_wp/facture/historicPDF?')) {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             self.oldPromisesToConvertBlobToBase64 = []
@@ -86,7 +86,7 @@ export default class XhrInterceptor {
     }
 
     // Intercepting more infos for Identity object
-    if (arguments[1].includes('ecd_wp/account/identification')) {
+    if (arguments[1]?.includes('ecd_wp/account/identification')) {
       self.originalResponse.addEventListener('readystatechange', function () {
         if (self.originalResponse.readyState === 4) {
           const jsonInfos = JSON.parse(self.originalResponse.responseText)
@@ -96,7 +96,7 @@ export default class XhrInterceptor {
       return proxied.apply(this, [].slice.call(arguments))
     }
     // Intercepting billingAddress infos for Identity object
-    if (arguments[1].includes('ecd_wp/account/billingAddresses')) {
+    if (arguments[1]?.includes('ecd_wp/account/billingAddresses')) {
       self.originalResponse.addEventListener('readystatechange', function () {
         if (self.originalResponse.readyState === 4) {
           const jsonInfos = JSON.parse(self.originalResponse.responseText)

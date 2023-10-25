@@ -203,7 +203,7 @@ class OrangeContentScript extends ContentScript {
 
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
-    await this.saveIdentity(this.store.infosIdentity)
+    await this.saveIdentity({ contact: this.store.infosIdentity })
 
     await this.clickAndWait(
       '#o-identityLink',
@@ -224,13 +224,17 @@ class OrangeContentScript extends ContentScript {
     this.log('info', 'navigateToPersonalInfos starts')
     await this.clickAndWait(
       '#o-identityLink',
-      'a[data-oevent-action="gerervotrecompte"]'
+      'a[data-oevent-action="infospersonnelles"]'
     )
-    await this.clickAndWait(
-      'a[data-oevent-action="gerervotrecompte"]',
-      'a[href="/compte/infos-perso"]'
-    )
-    await this.runInWorker('click', 'a[href="/compte/infos-perso"]')
+
+    await this.runInWorker('click', 'a[data-oevent-action="infospersonnelles"]')
+
+    await this.waitForElementInWorker('span', {
+      includesText: 'Infos personnelles'
+    })
+    await this.runInWorker('click', 'span', {
+      includesText: 'Infos personnelles'
+    })
     await Promise.all([
       this.waitForElementInWorker('a[href="/compte/etat-civil"]'),
       this.waitForElementInWorker(
@@ -242,17 +246,23 @@ class OrangeContentScript extends ContentScript {
 
   async getIdentity() {
     this.log('info', 'getIdentity starts')
-    const addressInfos = interceptor.userInfos[2][0]
-    const phoneNumber = interceptor.userInfos[0].contracts[0].telco.publicNumber
-    const houseNumber = addressInfos.postalAddress.streetNumber.number
-    const street = `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`
-    const postCode = addressInfos.postalAddress.postalCode
-    const city = addressInfos.postalAddress.cityName
-    const formattedAddress = `${houseNumber} ${street} ${postCode} ${city}`
+    const addressInfos = interceptor.userInfos[2]?.[0]
+    const phoneNumber =
+      interceptor.userInfos[0]?.contracts?.[0]?.telco?.publicNumber
+    const address = []
+    if (addressInfos) {
+      address.push({
+        houseNumber: addressInfos.postalAddress.streetNumber.number,
+        street: `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`,
+        postCode: addressInfos.postalAddress.postalCode,
+        city: addressInfos.postalAddress.cityName,
+        formattedAddress: `${address.houseNumber} ${address.street} ${address.postCode} ${address.city}`
+      })
+    }
     const infosIdentity = {
       name: {
-        givenName: interceptor.userInfos[0].contracts[0].holder.firstName,
-        lastName: interceptor.userInfos[0].contracts[0].holder.lastName
+        givenName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.firstName,
+        lastName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.lastName
       },
       phone: [
         {
@@ -260,17 +270,10 @@ class OrangeContentScript extends ContentScript {
           number: phoneNumber
         }
       ],
-      mail: interceptor.userInfos[1].contactInformation.email.address,
-      address: [
-        {
-          formattedAddress,
-          houseNumber,
-          street,
-          postCode,
-          city
-        }
-      ]
+      mail: interceptor.userInfos[1]?.contactInformation?.email?.address,
+      address
     }
+
     await this.sendToPilot({
       infosIdentity
     })
@@ -682,10 +685,6 @@ class OrangeContentScript extends ContentScript {
     return
   }
 
-  isElementPresent(selector) {
-    return Boolean(document.querySelector(selector))
-  }
-
   checkForCaptcha() {
     const captchaContainer = document.querySelector(
       'div[class*="captcha_responseContainer"]'
@@ -777,11 +776,11 @@ connector
       'checkIfRemember',
       'checkInfosConfirmation',
       'checkForCaptcha',
-      'isElementPresent',
       'waitForCaptchaResolution',
       'checkAccountListPage',
       'checkBillsElement',
-      'getFileName'
+      'getFileName',
+      'getIdentity'
     ]
   })
   .catch(err => {
