@@ -5,9 +5,24 @@ import { ContentScript } from 'cozy-clisk/dist/contentscript'
 import Minilog from '@cozy/minilog'
 import waitFor from 'p-wait-for'
 import XhrInterceptor from './interceptor'
+import ky from 'ky/umd'
 
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
+
+const ORANGE_SPECIAL_HEADERS = {
+  'X-Orange-Origin-Id': 'ECQ',
+  'X-Orange-Caller-Id': 'ECQ'
+}
+const PDF_HEADERS = {
+  Accept: 'application/pdf',
+  'Content-Type': 'application/pdf'
+}
+
+const JSON_HEADERS = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json'
+}
 
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
@@ -133,7 +148,7 @@ class OrangeContentScript extends ContentScript {
     const passwordInputSelector = '#password'
     const loginButtonSelector = '#btnSubmit'
     await this.waitForElementInWorker(emailSelector)
-    await this.runInWorker('fillingForm', credentials)
+    await this.runInWorker('fillForm', credentials)
     await this.runInWorker('click', loginButtonSelector)
 
     await Promise.race([
@@ -154,7 +169,7 @@ class OrangeContentScript extends ContentScript {
       return
     }
 
-    await this.runInWorker('fillingForm', credentials)
+    await this.runInWorker('fillForm', credentials)
     await this.runInWorker('click', loginButtonSelector)
   }
 
@@ -163,43 +178,21 @@ class OrangeContentScript extends ContentScript {
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
-    const billsPage = await this.runInWorkerUntilTrue({
-      method: 'checkBillsElement'
+
+    const { recentBills, oldBillsUrl } = await this.fetchRecentBills()
+    await this.saveBills(recentBills, {
+      context,
+      fileIdAttributes: ['vendorRef'],
+      contentType: 'application/pdf',
+      qualificationLabel: 'isp_invoice'
     })
-    if (!billsPage) {
-      this.log('warn', 'Cannot find a path to the bills page')
-      throw new Error('Cannot find a path to bill Page, aborting execution')
-    }
-    await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
-    await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
-    await Promise.race([
-      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
-      this.waitForElementInWorker('.alert-icon icon-error-severe'),
-      this.waitForElementInWorker(
-        '.alert-container alert-container-sm alert-danger mb-0'
-      )
-    ])
-    const redFrame = await this.runInWorker('checkRedFrame')
-    if (redFrame !== null) {
-      this.log('warn', 'Website did not load the bills')
-      throw new Error('VENDOR_DOWN')
-    }
-    let recentPdfNumber = await this.runInWorker('getPdfNumber')
-    const hasMoreBills = await this.runInWorker('getMoreBillsButton')
-    if (hasMoreBills) {
-      await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-      )
-    }
-    let allPdfNumber = await this.runInWorker('getPdfNumber')
-    let oldPdfNumber = allPdfNumber - recentPdfNumber
-    await this.convertRecentsToCozyBills(context, recentPdfNumber)
-    this.log('info', 'recentPdf loop ended')
-    if (oldPdfNumber != 0) {
-      await this.convertOldsToCozyBills(context, oldPdfNumber)
-      this.log('info', 'oldPdf loop ended, pdfButtons all clicked')
-    }
+    const oldBills = await this.fetchOldBills({ oldBillsUrl })
+    await this.saveBills(oldBills, {
+      context,
+      fileIdAttributes: ['vendorRef'],
+      contentType: 'application/pdf',
+      qualificationLabel: 'isp_invoice'
+    })
 
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
@@ -218,6 +211,128 @@ class OrangeContentScript extends ContentScript {
       log('error', 'Not completly disconnected, never found the second link')
       throw e
     }
+  }
+
+  async fetchOldBills({ oldBillsUrl }) {
+    this.log('info', 'fetching old bills')
+    const { oldBills } = await this.runInWorker(
+      'getOldBillsFromWorker',
+      oldBillsUrl
+    )
+    const cid = oldBillsUrl.split('=').pop()
+
+    const saveBillsEntries = []
+    for (const bill of oldBills) {
+      const { entityName, partitionKeyName, partitionKeyValue, tecId } = bill
+      const amount = bill.amount / 100
+      const vendorRef = tecId
+      const fileurl = `https://espace-client.orange.fr/ecd_wp/facture/historicPDF?entityName=${entityName}&partitionKeyName=${partitionKeyName}&partitionKeyValue=${partitionKeyValue}&tecId=${tecId}&cid=${cid}`
+      saveBillsEntries.push({
+        vendor: 'orange.fr',
+        date: bill.date,
+        amount,
+        recurrence: 'monthly',
+        vendorRef,
+        filename: await this.runInWorker(
+          'getFileName',
+          bill.date,
+          amount,
+          vendorRef
+        ),
+        fileurl,
+        requestOptions: {
+          headers: {
+            ...ORANGE_SPECIAL_HEADERS,
+            ...PDF_HEADERS
+          }
+        },
+        fileAttributes: {
+          metadata: {
+            invoiceNumber: vendorRef,
+            contentAuthor: 'orange',
+            datetime: bill.date,
+            datetimeLabel: 'startDate',
+            isSubscription: true,
+            startDate: bill.date,
+            carbonCopy: true
+          }
+        }
+      })
+    }
+    return saveBillsEntries
+  }
+
+  async getRecentBillsFromInterceptor() {
+    return interceptor.recentBills
+  }
+
+  async fetchRecentBills() {
+    await this.goto(BASE_URL)
+    await this.waitForElementInWorker('strong', {
+      includesText: 'Factures et paiements'
+    })
+    await this.runInWorker('click', 'strong', {
+      includesText: 'Factures et paiements'
+    })
+    await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
+    await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
+    await Promise.race([
+      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
+      this.waitForElementInWorker('.alert-icon icon-error-severe'),
+      this.waitForElementInWorker(
+        '.alert-container alert-container-sm alert-danger mb-0'
+      )
+    ])
+
+    const redFrame = await this.runInWorker('checkRedFrame')
+    if (redFrame !== null) {
+      this.log('warn', 'Website did not load the bills')
+      throw new Error('VENDOR_DOWN')
+    }
+
+    const recentBills = await this.runInWorker('getRecentBillsFromInterceptor')
+    const saveBillsEntries = []
+    for (const bill of recentBills.billsHistory.billList) {
+      const amount = bill.amount / 100
+      const vendorRef = bill.id || bill.tecId
+      saveBillsEntries.push({
+        vendor: 'orange.fr',
+        date: bill.date,
+        amount,
+        recurrence: 'monthly',
+        vendorRef,
+        filename: await this.runInWorker(
+          'getFileName',
+          bill.date,
+          amount,
+          vendorRef
+        ),
+        fileurl:
+          'https://espace-client.orange.fr/ecd_wp/facture/v1.0/pdf' +
+          bill.hrefPdf,
+        requestOptions: {
+          headers: {
+            ...ORANGE_SPECIAL_HEADERS,
+            ...PDF_HEADERS
+          }
+        },
+        fileAttributes: {
+          metadata: {
+            invoiceNumber: vendorRef,
+            contentAuthor: 'orange',
+            datetime: bill.date,
+            datetimeLabel: 'startDate',
+            isSubscription: true,
+            startDate: bill.date,
+            carbonCopy: true
+          }
+        }
+      })
+    }
+
+    // will be used to fetch old bills if needed
+    const oldBillsUrl = recentBills.billsHistory.oldBillsHref
+    return { recentBills: saveBillsEntries, oldBillsUrl }
   }
 
   async navigateToPersonalInfos() {
@@ -279,210 +394,7 @@ class OrangeContentScript extends ContentScript {
     })
   }
 
-  async convertRecentsToCozyBills(context, recentPdfNumber) {
-    for (let i = 0; i < recentPdfNumber; i++) {
-      await this.runInWorker('waitForRecentPdfClicked', i)
-      let redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        'a[class="h1 menu-subtitle mb-0 pb-1"]',
-        '[data-e2e="bp-tile-historic"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        '[data-e2e="bp-tile-historic"]',
-        '[aria-labelledby="bp-billsHistoryTitle"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-      )
-      await this.runInWorker('processingRecentBill')
-      this.store.dataUri = []
-      for (let i = 0; i < this.store.resolvedBase64.length; i++) {
-        let dateArray = this.store.resolvedBase64[i].href.match(
-          /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
-        )
-        this.store.resolvedBase64[i].date = dateArray[0]
-        const index = this.store.recentBillsToAdd.findIndex(function (bill) {
-          return bill.date === dateArray[0]
-        })
-        this.store.dataUri.push({
-          vendor: 'orange.fr',
-          date: this.store.recentBillsToAdd[index].date,
-          amount: this.store.recentBillsToAdd[index].amount / 100,
-          recurrence: 'monthly',
-          vendorRef: this.store.recentBillsToAdd[index].id
-            ? this.store.recentBillsToAdd[index].id
-            : this.store.recentBillsToAdd[index].tecId,
-          filename: await this.runInWorker(
-            'getFileName',
-            this.store.recentBillsToAdd[index].date,
-            this.store.recentBillsToAdd[index].amount / 100,
-            this.store.recentBillsToAdd[index].id ||
-              this.store.recentBillsToAdd[index].tecId
-          ),
-          dataUri: this.store.resolvedBase64[i].uri,
-          fileAttributes: {
-            metadata: {
-              invoiceNumber: this.store.recentBillsToAdd[index].id
-                ? this.store.recentBillsToAdd[index].id
-                : this.store.recentBillsToAdd[index].tecId,
-              contentAuthor: 'orange',
-              datetime: this.store.recentBillsToAdd[index].date,
-              datetimeLabel: 'startDate',
-              isSubscription: true,
-              startDate: this.store.recentBillsToAdd[index].date,
-              carbonCopy: true
-            }
-          }
-        })
-      }
-      await this.saveBills(this.store.dataUri, {
-        context,
-        fileIdAttributes: ['filename'],
-        contentType: 'application/pdf',
-        qualificationLabel: 'isp_invoice'
-      })
-    }
-  }
-
-  async convertOldsToCozyBills(context, oldPdfNumber) {
-    for (let i = 0; i < oldPdfNumber; i++) {
-      await this.runInWorker('waitForOldPdfClicked', i)
-      let redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        'a[class="h1 menu-subtitle mb-0 pb-1"]',
-        '[data-e2e="bp-tile-historic"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        '[data-e2e="bp-tile-historic"]',
-        '[aria-labelledby="bp-billsHistoryTitle"]'
-      )
-      redFrame = await this.runInWorker('checkRedFrame')
-      if (redFrame !== null) {
-        this.log('warn', 'Website did not load the bills')
-        throw new Error('VENDOR_DOWN')
-      }
-      await this.clickAndWait(
-        '[data-e2e="bh-more-bills"]',
-        '[aria-labelledby="bp-historicBillsHistoryTitle"]'
-      )
-      await this.runInWorker('processingOldBill')
-      this.store.dataUri = []
-      for (let i = 0; i < this.store.resolvedBase64.length; i++) {
-        let dateArray = this.store.resolvedBase64[i].href.match(
-          /([0-9]{4})-([0-9]{2})-([0-9]{2})/g
-        )
-        this.store.resolvedBase64[i].date = dateArray[0]
-        const index = this.store.oldBillsToAdd.findIndex(function (bill) {
-          return bill.date === dateArray[0]
-        })
-        this.store.dataUri.push({
-          vendor: 'orange.fr',
-          date: this.store.oldBillsToAdd[index].date,
-          amount: this.store.oldBillsToAdd[index].amount / 100,
-          recurrence: 'monthly',
-          vendorRef: this.store.oldBillsToAdd[index].id
-            ? this.store.oldBillsToAdd[index].id
-            : this.store.oldBillsToAdd[index].tecId,
-          filename: await this.runInWorker(
-            'getFileName',
-            this.store.oldBillsToAdd[index].date,
-            this.store.oldBillsToAdd[index].amount / 100,
-            this.store.oldBillsToAdd[index].id ||
-              this.store.oldBillsToAdd[index].tecId
-          ),
-          dataUri: this.store.resolvedBase64[i].uri,
-          fileAttributes: {
-            metadata: {
-              invoiceNumber: this.store.oldBillsToAdd[index].id
-                ? this.store.oldBillsToAdd[index].id
-                : this.store.oldBillsToAdd[index].tecId,
-              contentAuthor: 'orange',
-              datetime: this.store.oldBillsToAdd[index].date,
-              datetimeLabel: 'startDate',
-              isSubscription: true,
-              startDate: this.store.oldBillsToAdd[index].date,
-              carbonCopy: true
-            }
-          }
-        })
-      }
-      await this.saveBills(this.store.dataUri, {
-        context,
-        fileIdAttributes: ['filename'],
-        contentType: 'application/pdf',
-        qualificationLabel: 'isp_invoice'
-      })
-    }
-  }
-
-  findMoreBillsButton() {
-    this.log('info', 'Starting findMoreBillsButton')
-    const button = document.querySelector('[data-e2e="bh-more-bills"]')
-    if (button) return true
-    else return false
-  }
-
-  findPdfButtons() {
-    this.log('info', 'Starting findPdfButtons')
-    const buttons = Array.from(
-      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
-    )
-    return buttons
-  }
-
-  findBillsHistoricButton() {
-    this.log('info', 'Starting findPdfButtons')
-    const button = document.querySelector('[data-e2e="bp-tile-historic"]')
-    return button
-  }
-
-  findPdfNumber() {
-    this.log('info', 'Starting findPdfNumber')
-    const buttons = Array.from(
-      document.querySelectorAll('a[class="icon-pdf-file bp-downloadIcon"]')
-    )
-    return buttons.length
-  }
-
-  waitForRecentPdfClicked(i) {
-    let recentPdfs = document.querySelectorAll(
-      '[aria-labelledby="bp-billsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]'
-    )
-    recentPdfs[i].click()
-  }
-
-  waitForOldPdfClicked(i) {
-    let oldPdfs = document.querySelectorAll(
-      '[aria-labelledby="bp-historicBillsHistoryTitle"] a[class="icon-pdf-file bp-downloadIcon"]'
-    )
-    oldPdfs[i].click()
-  }
-
-  async fillingForm(credentials) {
+  async fillForm(credentials) {
     if (document.querySelector('#login')) {
       this.log('info', 'filling email field')
       document.querySelector('#login').value = credentials.email
@@ -604,73 +516,6 @@ class OrangeContentScript extends ContentScript {
     }
   }
 
-  async getMoreBillsButton() {
-    this.log('info', 'Getting in getMoreBillsButton')
-    let moreBillsButton = this.findMoreBillsButton()
-    return moreBillsButton
-  }
-
-  async getPdfNumber() {
-    this.log('info', 'Getting in getPdfNumber')
-    let pdfNumber = this.findPdfNumber()
-    return pdfNumber
-  }
-
-  async processingRecentBill() {
-    let resolvedBase64 = []
-    this.log('info', 'Awaiting promises')
-    const recentToBase64 = await Promise.all(
-      interceptor.recentPromisesToConvertBlobToBase64
-    )
-    this.log('info', 'Processing promises')
-    for (let i = 0; i < recentToBase64.length; i++) {
-      resolvedBase64.push({
-        uri: recentToBase64[i],
-        href: interceptor.recentXhrUrls[i]
-      })
-    }
-    const recentBillsToAdd = interceptor.recentBills[0].billsHistory.billList
-    this.log('debug', 'billsArray ready, Sending to pilot')
-    await this.sendToPilot({
-      resolvedBase64,
-      recentBillsToAdd
-    })
-    resolvedBase64 = []
-  }
-
-  async processingOldBill() {
-    let resolvedBase64 = []
-    this.log('info', 'Awaiting promises')
-    const oldToBase64 = await Promise.all(
-      interceptor.oldPromisesToConvertBlobToBase64
-    )
-    this.log('info', 'Processing promises')
-    for (let i = 0; i < oldToBase64.length; i++) {
-      resolvedBase64.push({
-        uri: oldToBase64[i],
-        href: interceptor.oldXhrUrls[i]
-      })
-    }
-    const oldBillsToAdd = interceptor.oldBills[0].oldBills
-    this.log('debug', 'billsArray ready, Sending to pilot')
-    await this.sendToPilot({
-      resolvedBase64,
-      oldBillsToAdd
-    })
-    resolvedBase64 = []
-  }
-
-  checkIfRemember() {
-    this.log('info', 'checkIfRemember starts')
-    const link = document.querySelector('#changeAccountLink')
-    if (link) {
-      this.log('info', 'returning true')
-      return true
-    }
-    this.log('info', 'returning false')
-    return false
-  }
-
   checkInfosConfirmation() {
     const laterButton = document.querySelector('a[class="btn btn-secondary"]')
     if (laterButton === null) {
@@ -717,45 +562,23 @@ class OrangeContentScript extends ContentScript {
     return true
   }
 
-  async checkAccountListPage() {
-    const isAccountListPage = Boolean(
-      document.querySelector('#undefined-label')
-    )
-    if (isAccountListPage) return true
-    return false
-  }
-
-  async findAndClickBillsElement() {
-    const strongElements = document.querySelectorAll('strong')
-    for (const element of strongElements) {
-      if (element.textContent === 'Factures et paiements') {
-        this.log('info', '"Factures et paiements" found, clicking it')
-        element.click()
-        return true
-      }
-    }
-    return false
-  }
-  async checkBillsElement() {
-    await waitFor(this.findAndClickBillsElement.bind(this), {
-      interval: 1000,
-      timeout: 30 * 1000
-    })
-    return true
+  async getOldBillsFromWorker(oldBillsUrl) {
+    const OLD_BILLS_URL_PREFIX =
+      'https://espace-client.orange.fr/ecd_wp/facture/historicBills'
+    return await ky
+      .get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
+        headers: {
+          ...ORANGE_SPECIAL_HEADERS,
+          ...JSON_HEADERS
+        }
+      })
+      .json()
   }
 
   async getFileName(date, amount, vendorRef) {
     const digestId = await hashVendorRef(vendorRef)
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
-  }
-
-  async waitForBillsElement() {
-    await waitFor(this.checkBillsElement, {
-      interval: 1000,
-      timeout: 30 * 1000
-    })
-    return true
   }
 }
 
@@ -765,22 +588,15 @@ connector
     additionalExposedMethodsNames: [
       'getUserMail',
       'checkRedFrame',
-      'getMoreBillsButton',
-      'processingRecentBill',
-      'processingOldBill',
       'getTestEmail',
-      'fillingForm',
-      'getPdfNumber',
-      'waitForRecentPdfClicked',
-      'waitForOldPdfClicked',
-      'checkIfRemember',
+      'fillForm',
       'checkInfosConfirmation',
       'checkForCaptcha',
       'waitForCaptchaResolution',
-      'checkAccountListPage',
-      'checkBillsElement',
       'getFileName',
-      'getIdentity'
+      'getIdentity',
+      'getRecentBillsFromInterceptor',
+      'getOldBillsFromWorker'
     ]
   })
   .catch(err => {
