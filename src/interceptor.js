@@ -1,12 +1,7 @@
 export default class XhrInterceptor {
   constructor() {
     this.recentBills = {}
-    this.oldBills = []
-    this.recentPromisesToConvertBlobToBase64 = []
-    this.oldPromisesToConvertBlobToBase64 = []
-    this.recentXhrUrls = []
-    this.oldXhrUrls = []
-    this.userInfos = []
+    this.userInfos = {}
   }
 
   init() {
@@ -32,7 +27,7 @@ export default class XhrInterceptor {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonInfos = JSON.parse(originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+            self.userInfos.portfolio = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
@@ -41,9 +36,9 @@ export default class XhrInterceptor {
       // Intercepting more infos for Identity object
       if (arguments[1]?.includes('ecd_wp/account/identification')) {
         originalResponse.addEventListener('readystatechange', function () {
-          if (self.originalResponse.readyState === 4) {
-            const jsonInfos = JSON.parse(self.originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+          if (originalResponse.readyState === 4) {
+            const jsonInfos = JSON.parse(originalResponse.responseText)
+            self.userInfos.identification = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
@@ -51,9 +46,9 @@ export default class XhrInterceptor {
       // Intercepting billingAddress infos for Identity object
       if (arguments[1]?.includes('ecd_wp/account/billingAddresses')) {
         originalResponse.addEventListener('readystatechange', function () {
-          if (self.originalResponse.readyState === 4) {
-            const jsonInfos = JSON.parse(self.originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+          if (originalResponse.readyState === 4) {
+            const jsonInfos = JSON.parse(originalResponse.responseText)
+            self.userInfos.billingAddresses = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
