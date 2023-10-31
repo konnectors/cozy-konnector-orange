@@ -5476,12 +5476,7 @@ __webpack_require__.r(__webpack_exports__);
 class XhrInterceptor {
   constructor() {
     this.recentBills = {}
-    this.oldBills = []
-    this.recentPromisesToConvertBlobToBase64 = []
-    this.oldPromisesToConvertBlobToBase64 = []
-    this.recentXhrUrls = []
-    this.oldXhrUrls = []
-    this.userInfos = []
+    this.userInfos = {}
   }
 
   init() {
@@ -5507,7 +5502,7 @@ class XhrInterceptor {
         originalResponse.addEventListener('readystatechange', function () {
           if (originalResponse.readyState === 4) {
             const jsonInfos = JSON.parse(originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+            self.userInfos.portfolio = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
@@ -5516,9 +5511,9 @@ class XhrInterceptor {
       // Intercepting more infos for Identity object
       if (arguments[1]?.includes('ecd_wp/account/identification')) {
         originalResponse.addEventListener('readystatechange', function () {
-          if (self.originalResponse.readyState === 4) {
-            const jsonInfos = JSON.parse(self.originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+          if (originalResponse.readyState === 4) {
+            const jsonInfos = JSON.parse(originalResponse.responseText)
+            self.userInfos.identification = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
@@ -5526,9 +5521,9 @@ class XhrInterceptor {
       // Intercepting billingAddress infos for Identity object
       if (arguments[1]?.includes('ecd_wp/account/billingAddresses')) {
         originalResponse.addEventListener('readystatechange', function () {
-          if (self.originalResponse.readyState === 4) {
-            const jsonInfos = JSON.parse(self.originalResponse.responseText)
-            self.userInfos.push(jsonInfos)
+          if (originalResponse.readyState === 4) {
+            const jsonInfos = JSON.parse(originalResponse.responseText)
+            self.userInfos.billingAddresses = jsonInfos
           }
         })
         return proxied.apply(this, [].slice.call(arguments))
@@ -5670,10 +5665,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async navigateToLoginForm() {
     this.log('info', 'navigateToLoginForm starts')
     await this.goto(LOGIN_FORM_PAGE)
-    // Has the website has 2 steps for auth, reaching this page can lead on a full login (login+password)
-    // a half login (password) or if you already connected, a "stay connected" button.
-    // It can also lead to a captcha page.
-    // We are waiting for one of them to show
     await Promise.race([
       this.waitForElementInWorker('#login-label'),
       this.waitForElementInWorker('#password-label'),
@@ -5902,7 +5893,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async fetchRecentBills() {
-    await this.goto(BASE_URL)
     await this.waitForElementInWorker('strong', {
       includesText: 'Factures et paiements'
     })
@@ -5996,9 +5986,9 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async getIdentity() {
     this.log('info', 'getIdentity starts')
-    const addressInfos = interceptor.userInfos[2]?.[0]
+    const addressInfos = interceptor.userInfos.billingAddresses?.[0]
     const phoneNumber =
-      interceptor.userInfos[0]?.contracts?.[0]?.telco?.publicNumber
+      interceptor.userInfos.portfolio?.contracts?.[0]?.telco?.publicNumber
     const address = []
     if (addressInfos) {
       address.push({
@@ -6011,17 +6001,21 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     const infosIdentity = {
       name: {
-        givenName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.firstName,
-        lastName: interceptor.userInfos[0]?.contracts?.[0]?.holder?.lastName
+        givenName:
+          interceptor.indentification?.contracts?.[0]?.holder?.firstName,
+        lastName: interceptor.indentification?.contracts?.[0]?.holder?.lastName
       },
-      phone: [
+      mail: interceptor.identification?.contactInformation?.email?.address,
+      address
+    }
+
+    if (phoneNumber && phoneNumber.match) {
+      infosIdentity.phone = [
         {
           type: phoneNumber.match(/^06|07|\+336|\+337/g) ? 'mobile' : 'home',
           number: phoneNumber
         }
-      ],
-      mail: interceptor.userInfos[1]?.contactInformation?.email?.address,
-      address
+      ]
     }
 
     await this.sendToPilot({
