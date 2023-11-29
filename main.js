@@ -5964,13 +5964,19 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async navigateToPersonalInfos() {
     this.log('info', 'navigateToPersonalInfos starts')
-    await this.clickAndWait(
-      '#o-identityLink',
-      'a[data-oevent-action="infospersonnelles"]'
-    )
-
-    await this.runInWorker('click', 'a[data-oevent-action="infospersonnelles"]')
-
+    if (!(await this.isElementInWorker('#o-identityLink'))) {
+      this.log('info', 'Cannot find the identityLinkButton, trying with a goto')
+      await this.goto('https://espace-client.orange.fr/compte')
+    } else {
+      await this.clickAndWait(
+        '#o-identityLink',
+        'a[data-oevent-action="infospersonnelles"]'
+      )
+      await this.runInWorker(
+        'click',
+        'a[data-oevent-action="infospersonnelles"]'
+      )
+    }
     await this.waitForElementInWorker('span', {
       includesText: 'Infos personnelles'
     })
