@@ -143,10 +143,13 @@ class OrangeContentScript extends ContentScript {
     const emailSelector = '#login'
     const passwordInputSelector = '#password'
     const loginButtonSelector = '#btnSubmit'
-    await this.waitForElementInWorker(emailSelector)
-    await this.runInWorker('fillForm', credentials)
-    await this.runInWorker('click', loginButtonSelector)
-
+    await this.waitForElementInWorker(
+      `${emailSelector}, ${passwordInputSelector}`
+    )
+    if (await this.isElementInWorker(emailSelector)) {
+      await this.runInWorker('fillForm', credentials)
+      await this.runInWorker('click', loginButtonSelector)
+    }
     await Promise.race([
       this.waitForElementInWorker('button[data-testid="button-keepconnected"]'),
       this.waitForElementInWorker(passwordInputSelector)
@@ -345,18 +348,23 @@ class OrangeContentScript extends ContentScript {
         'a[data-oevent-action="infospersonnelles"]'
       )
     }
-    await this.waitForElementInWorker('span', {
-      includesText: 'Infos personnelles'
+    await this.waitForElementInWorker('p', {
+      includesText: 'Infos de contact'
     })
-    await this.runInWorker('click', 'span', {
-      includesText: 'Infos personnelles'
+    await this.runInWorker('click', 'p', {
+      includesText: 'Infos de contact'
     })
+    this.log('info', 'Promise.all')
     await Promise.all([
-      this.waitForElementInWorker('a[href="/compte/etat-civil"]'),
       this.waitForElementInWorker(
-        'a[href="/compte/modification-moyens-contact"]'
+        '[data-e2e="btn-contact-info-modifier-votre-identite"]'
       ),
-      this.waitForElementInWorker('a[href="/compte/adresse"]')
+      this.waitForElementInWorker(
+        '[data-e2e="btn-contact-info-modifier-vos-coordonnees"]'
+      ),
+      this.waitForElementInWorker(
+        '[data-e2e="btn-contact-info-modifier-vos-adresses-postales"]'
+      )
     ])
   }
 
@@ -367,21 +375,32 @@ class OrangeContentScript extends ContentScript {
       interceptor.userInfos.portfolio?.contracts?.[0]?.telco?.publicNumber
     const address = []
     if (addressInfos) {
+      const houseNumber = addressInfos.postalAddress?.streetNumber?.number
+      const streetType = addressInfos.postalAddress?.street?.type
+      const streetName = addressInfos.postalAddress?.street?.name
+      const street =
+        streetType && streetName ? `${streetType} ${streetName}` : undefined
+      const postCode = addressInfos.postalAddress?.postalCode
+      const city = addressInfos.postalAddress?.cityName
+      const formattedAddress =
+        houseNumber && street && postCode && city
+          ? `${houseNumber} ${street} ${postCode} ${city}`
+          : undefined
       address.push({
-        houseNumber: addressInfos.postalAddress.streetNumber.number,
-        street: `${addressInfos.postalAddress.street.type} ${addressInfos.postalAddress.street.name}`,
-        postCode: addressInfos.postalAddress.postalCode,
-        city: addressInfos.postalAddress.cityName,
-        formattedAddress: `${address.houseNumber} ${address.street} ${address.postCode} ${address.city}`
+        houseNumber,
+        street,
+        postCode,
+        city,
+        formattedAddress
       })
     }
     const infosIdentity = {
       name: {
-        givenName:
-          interceptor.indentification?.contracts?.[0]?.holder?.firstName,
-        lastName: interceptor.indentification?.contracts?.[0]?.holder?.lastName
+        givenName: interceptor.userInfos.identification?.identity?.firstName,
+        lastName: interceptor.userInfos.identification?.identity?.lastName
       },
-      mail: interceptor.identification?.contactInformation?.email?.address,
+      mail: interceptor.userInfos.identification?.contactInformation?.email
+        ?.address,
       address
     }
 
