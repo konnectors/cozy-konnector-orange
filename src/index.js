@@ -144,7 +144,6 @@ class OrangeContentScript extends ContentScript {
       this.log('info', 'no credentials found, use normal user login')
       await this.waitForUserAuthentication()
     }
-    await this.detectSoshOnlyAccount()
   }
 
   async checkAuthenticated() {
@@ -567,23 +566,6 @@ class OrangeContentScript extends ContentScript {
     if (redFrame) return redFrame
     if (oldBillsRedFrame) return oldBillsRedFrame
     return null
-  }
-
-  async detectSoshOnlyAccount() {
-    await this.runInWorker('checkInfosConfirmation')
-    await this.waitForElementInWorker(`a[href="${DEFAULT_PAGE_URL}"`)
-    await this.goto(DEFAULT_PAGE_URL)
-    await this.waitForElementInWorker('strong')
-    const isSosh = await this.runInWorker(
-      'checkForElement',
-      `#oecs__logo[href="https://www.sosh.fr/"]`
-    )
-    this.log('info', 'isSosh ' + isSosh)
-    if (isSosh) {
-      throw new Error(
-        'This should be an orange account. Found only sosh contracts'
-      )
-    }
   }
 
   async getTestEmail() {
