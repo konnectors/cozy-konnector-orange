@@ -32,6 +32,57 @@ const interceptor = new XhrInterceptor()
 interceptor.init()
 
 class OrangeContentScript extends ContentScript {
+  async onWorkerEvent({ event, payload }) {
+    if (event === 'loginSubmit') {
+      const { login, password } = payload || {}
+      if (login && password) {
+        this.store.userCredentials = { login, password }
+      } else {
+        this.log('warn', 'Did not manage to intercept credentials')
+      }
+    }
+  }
+
+  async onWorkerReady() {
+    function addClickListener() {
+      document.body.addEventListener('click', e => {
+        const clickedElementId = e.target.getAttribute('id')
+        const clickedElementContent = e.target.textContent
+        if (
+          clickedElementId === 'btnSubmit' &&
+          clickedElementContent !== 'Continuer'
+        ) {
+          const login = document.querySelector(
+            `[data-testid=selected-account-login] > strong`
+          )?.innerHTML
+          const password = document.querySelector('#password')?.value
+          this.bridge.emit('workerEvent', {
+            event: 'loginSubmit',
+            payload: { login, password }
+          })
+        }
+      })
+    }
+    await this.waitForElementNoReload('#password')
+    if (
+      !(await this.checkForElement('#remember')) &&
+      (await this.checkForElement('#password'))
+    ) {
+      this.log(
+        'warn',
+        'Cannot find the rememberMe checkbox, logout might not work as expected'
+      )
+    } else {
+      const checkBox = document.querySelector('#remember')
+      checkBox.click()
+      // Setting the visibility to hidden on the parent to make the element disapear
+      // preventing users to click it
+      checkBox.parentNode.parentNode.style.visibility = 'hidden'
+    }
+    this.log('info', 'password element found, adding listener')
+    addClickListener.bind(this)()
+  }
+
   async navigateToLoginForm() {
     this.log('info', 'navigateToLoginForm starts')
     await this.goto(LOGIN_FORM_PAGE)
@@ -83,6 +134,7 @@ class OrangeContentScript extends ContentScript {
 
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
+    this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     if (credentials) {
@@ -96,19 +148,6 @@ class OrangeContentScript extends ContentScript {
   }
 
   async checkAuthenticated() {
-    const loginField = document.querySelector(
-      'p[data-testid="selected-account-login"]'
-    )
-    const passwordField = document.querySelector('#password')
-    if (loginField && passwordField) {
-      const userCredentials = await this.findAndSendCredentials.bind(this)(
-        loginField
-      )
-      this.log('info', 'Sending user credentials to Pilot')
-      this.sendToPilot({
-        userCredentials
-      })
-    }
     const isGoodUrl = document.location.href.includes(
       'https://www.orange.fr/portail'
     )
@@ -124,6 +163,20 @@ class OrangeContentScript extends ContentScript {
 
   async waitForUserAuthentication() {
     this.log('info', 'waitForUserAuthentication start')
+    if (!(await this.isElementInWorker('#remember'))) {
+      this.log(
+        'warn',
+        'Cannot find the rememberMe checkbox, logout might not work as expected'
+      )
+    } else {
+      await this.evaluateInWorker(function uncheckAndHideRememberMe() {
+        const checkBox = document.querySelector('#remember')
+        checkBox.click()
+        // Setting the visibility to hidden on the parent to make the element disapear
+        // preventing users to click it
+        checkBox.parentNode.parentNode.style.visibility = 'hidden'
+      })
+    }
     await this.setWorkerState({
       visible: true
     })
@@ -421,7 +474,7 @@ class OrangeContentScript extends ContentScript {
   async fillForm(credentials) {
     if (document.querySelector('#login')) {
       this.log('info', 'filling email field')
-      document.querySelector('#login').value = credentials.email
+      document.querySelector('#login').value = credentials.login
       return
     }
     if (document.querySelector('#password')) {
@@ -440,38 +493,28 @@ class OrangeContentScript extends ContentScript {
 
   async getUserDataFromWebsite() {
     this.log('info', '🤖 getUserDataFromWebsite starts')
-    await this.waitForElementInWorker('.o-identityLayer-detail')
-    const sourceAccountId = await this.runInWorker('getUserMail')
-    if (sourceAccountId === 'UNKNOWN_ERROR') {
+    const credentials = await this.getCredentials()
+    const credentialsLogin = credentials?.login
+    const storeLogin = this.store?.userCredentials?.login
+
+    // prefer credentials over user email since it may not be know by the user
+    let sourceAccountIdentifier = credentialsLogin || storeLogin
+    if (!sourceAccountIdentifier) {
+      await this.waitForElementInWorker('.o-identityLayer-detail')
+      sourceAccountIdentifier = await this.runInWorker('getUserMail')
+    }
+
+    if (!sourceAccountIdentifier) {
       throw new Error('Could not get a sourceAccountIdentifier')
     }
+
     return {
-      sourceAccountIdentifier: sourceAccountId
+      sourceAccountIdentifier: sourceAccountIdentifier
     }
   }
 
   async getUserMail() {
-    try {
-      const result = document.querySelector('.o-identityLayer-detail').innerHTML
-      if (result) {
-        return result
-      }
-    } catch (err) {
-      if (
-        err.message === "Cannot read properties of null (reading 'innerHTML')"
-      ) {
-        this.log(
-          'warn',
-          `Error message : ${err.message}, trying to reload page`
-        )
-        window.location.reload()
-        this.log('info', 'Profil homePage reloaded')
-      } else {
-        this.log('warn', 'Untreated problem encountered')
-        return 'UNKNOWN_ERROR'
-      }
-    }
-    return false
+    return window.o_idzone?.USER_MAIL_ADDRESS
   }
 
   async findAndSendCredentials(loginField) {
