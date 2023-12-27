@@ -230,21 +230,37 @@ class OrangeContentScript extends ContentScript {
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
-
-    const { recentBills, oldBillsUrl } = await this.fetchRecentBills()
-    await this.saveBills(recentBills, {
-      context,
-      fileIdAttributes: ['vendorRef'],
-      contentType: 'application/pdf',
-      qualificationLabel: 'isp_invoice'
-    })
-    const oldBills = await this.fetchOldBills({ oldBillsUrl })
-    await this.saveBills(oldBills, {
-      context,
-      fileIdAttributes: ['vendorRef'],
-      contentType: 'application/pdf',
-      qualificationLabel: 'isp_invoice'
-    })
+    await this.goto('https://espace-client.orange.fr/accueil')
+    await this.waitForElementInWorker('.menu')
+    const contracts = await this.runInWorker('getContracts')
+    let counter = 1
+    for (const contract of contracts) {
+      this.log('info', `Fetching ${counter}/${contracts.length} contract`)
+      const { recentBills, oldBillsUrl } = await this.fetchRecentBills(
+        contract.vendorId
+      )
+      await this.saveBills(recentBills, {
+        context,
+        fileIdAttributes: ['vendorRef'],
+        contentType: 'application/pdf',
+        subPath: `${contract.number} - ${contract.label} - ${contract.vendorId}`,
+        qualificationLabel:
+          contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
+      })
+      const oldBills = await this.fetchOldBills({
+        oldBillsUrl,
+        vendorId: contract.vendorId
+      })
+      await this.saveBills(oldBills, {
+        context,
+        fileIdAttributes: ['vendorRef'],
+        contentType: 'application/pdf',
+        subPath: `${contract.number} - ${contract.label} - ${contract.vendorId}`,
+        qualificationLabel:
+          contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
+      })
+      counter++
+    }
 
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
@@ -265,13 +281,28 @@ class OrangeContentScript extends ContentScript {
     }
   }
 
-  async fetchOldBills({ oldBillsUrl }) {
+  async getContracts() {
+    this.log('info', '📍️ getContracts starts')
+    return interceptor.userInfos.portfolio.contracts
+      .map(contract => ({
+        vendorId: contract.cid,
+        brand: contract.brand.toLowerCase(),
+        // eslint-disable-next-line no-useless-escape
+        label: contract.offerName.match(/^(.*?)(\d{1,3}(?:\,\d{1,2})?)?€?$/)[1],
+        type: contract.vertical.toLowerCase() === 'mobile' ? 'phone' : 'isp',
+        holder: contract.holder,
+        number: contract.telco.publicNumber
+      }))
+      .filter(contract => contract.brand === 'orange')
+  }
+
+  async fetchOldBills({ oldBillsUrl, vendorId }) {
     this.log('info', 'fetching old bills')
     const { oldBills } = await this.runInWorker(
       'getOldBillsFromWorker',
       oldBillsUrl
     )
-    const cid = oldBillsUrl.split('=').pop()
+    const cid = vendorId
 
     const saveBillsEntries = []
     for (const bill of oldBills) {
@@ -318,13 +349,10 @@ class OrangeContentScript extends ContentScript {
     return interceptor.recentBills
   }
 
-  async fetchRecentBills() {
-    await this.waitForElementInWorker('strong', {
-      includesText: 'Factures et paiements'
-    })
-    await this.runInWorker('click', 'strong', {
-      includesText: 'Factures et paiements'
-    })
+  async fetchRecentBills(vendorId) {
+    await this.goto(
+      'https://espace-client.orange.fr/facture-paiement/' + vendorId
+    )
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
     await Promise.race([
@@ -663,7 +691,8 @@ connector
       'getFileName',
       'getIdentity',
       'getRecentBillsFromInterceptor',
-      'getOldBillsFromWorker'
+      'getOldBillsFromWorker',
+      'getContracts'
     ]
   })
   .catch(err => {
