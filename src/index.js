@@ -229,7 +229,7 @@ class OrangeContentScript extends ContentScript {
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
-    await this.goto('https://espace-client.orange.fr/accueil')
+    await this.goto(DEFAULT_PAGE_URL)
     await this.waitForElementInWorker('.menu')
     const contracts = await this.runInWorker('getContracts')
     let counter = 1
@@ -479,8 +479,13 @@ class OrangeContentScript extends ContentScript {
         givenName: interceptor.userInfos.identification?.identity?.firstName,
         lastName: interceptor.userInfos.identification?.identity?.lastName
       },
-      mail: interceptor.userInfos.identification?.contactInformation?.email
-        ?.address,
+      mail: [
+        {
+          address:
+            interceptor.userInfos.identification?.contactInformation?.email
+              ?.address
+        }
+      ],
       address
     }
 
@@ -492,7 +497,6 @@ class OrangeContentScript extends ContentScript {
         }
       ]
     }
-
     await this.sendToPilot({
       infosIdentity
     })
