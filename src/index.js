@@ -374,7 +374,9 @@ class OrangeContentScript extends ContentScript {
         vendorId: contract.cid,
         brand: contract.brand.toLowerCase(),
         // eslint-disable-next-line no-useless-escape
-        label: contract.offerName.match(/^(.*?)(\d{1,3}(?:\,\d{1,2})?)?€?$/)[1],
+        label: contract.offerName.match(/\d{1,3},\d{2}€/)
+          ? contract.offerName.replace(/\s\d{1,3},\d{2}€/, '')
+          : contract.offerName,
         type: contract.vertical.toLowerCase() === 'mobile' ? 'phone' : 'isp',
         holder: contract.holder,
         number: contract.telco.publicNumber
