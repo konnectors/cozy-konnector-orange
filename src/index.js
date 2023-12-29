@@ -53,8 +53,8 @@ class OrangeContentScript extends ContentScript {
           clickedElementContent !== 'Continuer'
         ) {
           const login = document.querySelector(
-            `[data-testid=selected-account-login] > strong`
-          )?.innerHTML
+            `[data-testid=selected-account-login]`
+          )?.textContent
           const password = document.querySelector('#password')?.value
           this.bridge.emit('workerEvent', {
             event: 'loginSubmit',
@@ -63,6 +63,9 @@ class OrangeContentScript extends ContentScript {
         }
       })
     }
+    // Necessary here for the interception to cover every known scenarios
+    // Doing so we ensure if the logout leads to the password step that the listener won't start until the user has filled up the login
+    await this.waitForElementNoReload('#login-label')
     await this.waitForElementNoReload('#password')
     if (
       !(await this.checkForElement('#remember')) &&
@@ -109,32 +112,16 @@ class OrangeContentScript extends ContentScript {
       '#undefined-label'
     )
     this.log('info', 'undefinedLabelPresent: ' + undefinedLabelPresent)
-
-    const { askForCaptcha, captchaUrl } = await this.runInWorker(
-      'checkForCaptcha'
-    )
-    if (askForCaptcha) {
-      this.log('info', 'captcha found, waiting for resolution')
-      await this.waitForUserAction(captchaUrl)
-    }
-
-    // always choose to login on another account
-    const isShowingKeepConnected = await this.isElementInWorker(
-      'button[data-testid="button-keepconnected"]'
-    )
-    this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
-    if (isShowingKeepConnected) {
-      await this.clickAndWait('#changeAccountLink', '#undefined-label')
-    }
-
-    if (await this.isElementInWorker('#undefined-label')) {
-      await this.clickAndWait('#undefined-label', '#login-label')
-    }
+    await this.handleCaptcha()
+    await this.handleKeepConnected('changeAccount')
   }
 
-  async ensureAuthenticated() {
+  async ensureAuthenticated({ account }) {
     this.log('info', '🤖 ensureAuthenticated starts')
     this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
+    if (!account) {
+      await this.ensureNotAuthenticated()
+    }
     await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     if (credentials) {
@@ -144,6 +131,87 @@ class OrangeContentScript extends ContentScript {
       this.log('info', 'no credentials found, use normal user login')
       await this.waitForUserAuthentication()
     }
+  }
+
+  async ensureNotAuthenticated() {
+    this.log('info', '📍️ ensureNotAuthenticated starts')
+    await this.goto(DEFAULT_PAGE_URL)
+    await this.waitForElementInWorker(
+      '.menu, #password, div[class*="captcha_responseContainer"], button[data-testid="button-keepconnected"], [data-oevent-action="identifiezvous"]'
+    )
+    const connectionButton = await this.isElementInWorker(
+      '[data-oevent-action="identifiezvous"]'
+    )
+    if (connectionButton) {
+      this.log('info', 'Already logged out, continue')
+      return true
+    }
+    const isLogged = await this.isElementInWorker('.menu')
+    if (isLogged) {
+      await this.logout()
+      return true
+    }
+    await this.handleCaptcha()
+    const isLoggedOut = await this.handleKeepConnected('logout')
+    if (isLoggedOut) {
+      this.log('info', 'handleKeepConnected - Logout successful')
+      return true
+    }
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (authenticated === false) {
+      this.log('info', 'Already not authenticated')
+      return true
+    }
+    this.log('info', 'authenticated, triggering the deconnection')
+    await this.logout()
+    return true
+  }
+
+  async handleCaptcha() {
+    this.log('info', '📍️ handleCaptcha starts')
+    const { askForCaptcha, captchaUrl } = await this.runInWorker(
+      'checkForCaptcha'
+    )
+    if (askForCaptcha) {
+      this.log('info', 'captcha found, waiting for resolution')
+      await this.waitForUserAction(captchaUrl)
+    }
+  }
+
+  async handleKeepConnected(option) {
+    this.log('info', `📍️ handleKeepConnected for ${option} starts`)
+    const isShowingKeepConnected = await this.isElementInWorker(
+      'button[data-testid="button-keepconnected"]'
+    )
+    const isShowingPasswordStep = await this.isElementInWorker('#password')
+    const isShowingLoginStep = await this.isElementInWorker('#login-label')
+    this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
+    this.log('info', 'isShowingPasswordStep: ' + isShowingPasswordStep)
+    if (option === 'changeAccount') {
+      // always choose to login on another account
+      if (isShowingKeepConnected || isShowingPasswordStep) {
+        await this.clickAndWait('#changeAccountLink', '#undefined-label')
+        if (await this.isElementInWorker('#undefined-label')) {
+          await this.clickAndWait('#undefined-label', '#login-label')
+        }
+        return true
+      } else if (isShowingLoginStep) {
+        this.log('info', `Last action leads directly to login step`)
+        return true
+      }
+    }
+    if (option === 'logout') {
+      if (isShowingKeepConnected) {
+        await this.clickAndWait(
+          'button[data-testid="button-keepconnected"]',
+          '.menu'
+        )
+        await this.logout()
+        return true
+      }
+    }
+    this.log('warn', `Option "${option}" leads to unknown case`)
+    return false
   }
 
   async checkAuthenticated() {
@@ -162,20 +230,6 @@ class OrangeContentScript extends ContentScript {
 
   async waitForUserAuthentication() {
     this.log('info', 'waitForUserAuthentication start')
-    if (!(await this.isElementInWorker('#remember'))) {
-      this.log(
-        'warn',
-        'Cannot find the rememberMe checkbox, logout might not work as expected'
-      )
-    } else {
-      await this.evaluateInWorker(function uncheckAndHideRememberMe() {
-        const checkBox = document.querySelector('#remember')
-        checkBox.click()
-        // Setting the visibility to hidden on the parent to make the element disapear
-        // preventing users to click it
-        checkBox.parentNode.parentNode.style.visibility = 'hidden'
-      })
-    }
     await this.setWorkerState({
       visible: true
     })
@@ -224,6 +278,23 @@ class OrangeContentScript extends ContentScript {
     await this.runInWorker('click', loginButtonSelector)
   }
 
+  async logout() {
+    this.log('info', '📍️ logout starts')
+    await this.clickAndWait(
+      '#o-identityLink',
+      'a[data-oevent-action="sedeconnecter"]'
+    )
+    try {
+      await this.clickAndWait(
+        'a[data-oevent-action="sedeconnecter"]',
+        'a[data-oevent-action="identifiez-vous"]'
+      )
+    } catch (e) {
+      log('error', 'Not completly disconnected, never found the second link')
+      throw e
+    }
+  }
+
   async fetch(context) {
     this.log('info', '🤖 fetch start')
     if (this.store.userCredentials != undefined) {
@@ -264,20 +335,8 @@ class OrangeContentScript extends ContentScript {
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
     await this.saveIdentity({ contact: this.store.infosIdentity })
-
-    await this.clickAndWait(
-      '#o-identityLink',
-      'a[data-oevent-action="sedeconnecter"]'
-    )
-    try {
-      await this.clickAndWait(
-        'a[data-oevent-action="sedeconnecter"]',
-        'a[data-oevent-action="identifiez-vous"]'
-      )
-    } catch (e) {
-      log('error', 'Not completly disconnected, never found the second link')
-      throw e
-    }
+    // Logging out every run to avoid in between scenarios and sosh/orange mismatched sessions
+    await this.logout()
   }
 
   async getContracts() {
