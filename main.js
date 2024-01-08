@@ -5900,6 +5900,7 @@ const JSON_HEADERS = {
 const BASE_URL = 'https://espace-client.orange.fr'
 const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
 const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
+let FORCE_FETCH_ALL = false
 
 const interceptor = new _interceptor__WEBPACK_IMPORTED_MODULE_3__["default"]()
 interceptor.init()
@@ -6170,6 +6171,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async fetch(context) {
     this.log('info', '🤖 fetch start')
+    const distanceInDays = await this.handleContextInfos(context)
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
@@ -6180,7 +6182,8 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     for (const contract of contracts) {
       this.log('info', `Fetching ${counter}/${contracts.length} contract`)
       const { recentBills, oldBillsUrl } = await this.fetchRecentBills(
-        contract.vendorId
+        contract.vendorId,
+        distanceInDays
       )
       await this.saveBills(recentBills, {
         context,
@@ -6190,18 +6193,20 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         qualificationLabel:
           contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
       })
-      const oldBills = await this.fetchOldBills({
-        oldBillsUrl,
-        vendorId: contract.vendorId
-      })
-      await this.saveBills(oldBills, {
-        context,
-        fileIdAttributes: ['vendorRef'],
-        contentType: 'application/pdf',
-        subPath: `${contract.number} - ${contract.label} - ${contract.vendorId}`,
-        qualificationLabel:
-          contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
-      })
+      if (FORCE_FETCH_ALL) {
+        const oldBills = await this.fetchOldBills({
+          oldBillsUrl,
+          vendorId: contract.vendorId
+        })
+        await this.saveBills(oldBills, {
+          context,
+          fileIdAttributes: ['vendorRef'],
+          contentType: 'application/pdf',
+          subPath: `${contract.number} - ${contract.label} - ${contract.vendorId}`,
+          qualificationLabel:
+            contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
+        })
+      }
       counter++
     }
 
@@ -6212,6 +6217,29 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await this.logout()
   }
 
+  async handleContextInfos(context) {
+    this.log('info', '📍️ handleContextInfos starts')
+    const { trigger } = context
+    // force fetch all data (the long way) when last trigger execution is older than 90 days
+    // or when the last job was an error
+    const isLastJobError =
+      trigger.current_state?.last_failure > trigger.current_state?.last_success
+    const hasLastExecution = Boolean(trigger.current_state?.last_execution)
+    const distanceInDays = getDateDistanceInDays(
+      trigger.current_state?.last_execution
+    )
+    this.log('debug', `distanceInDays: ${distanceInDays}`)
+    if (distanceInDays >= 90 || !hasLastExecution || isLastJobError) {
+      this.log('info', '🐢️ Long execution')
+      this.log('debug', `isLastJobError: ${isLastJobError}`)
+      this.log('debug', `hasLastExecution: ${hasLastExecution}`)
+      FORCE_FETCH_ALL = true
+    } else {
+      this.log('info', '🐇️ Quick execution')
+    }
+    return distanceInDays
+  }
+
   async getContracts() {
     this.log('info', '📍️ getContracts starts')
     return interceptor.userInfos.portfolio.contracts
@@ -6219,7 +6247,9 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         vendorId: contract.cid,
         brand: contract.brand.toLowerCase(),
         // eslint-disable-next-line no-useless-escape
-        label: contract.offerName.match(/^(.*?)(\d{1,3}(?:\,\d{1,2})?)?€?$/)[1],
+        label: contract.offerName.match(/\d{1,3},\d{2}€/)
+          ? contract.offerName.replace(/\s\d{1,3},\d{2}€/, '')
+          : contract.offerName,
         type: contract.vertical.toLowerCase() === 'mobile' ? 'phone' : 'isp',
         holder: contract.holder,
         number: contract.telco.publicNumber
@@ -6280,7 +6310,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return interceptor.recentBills
   }
 
-  async fetchRecentBills(vendorId) {
+  async fetchRecentBills(vendorId, distanceInDays) {
     await this.goto(
       'https://espace-client.orange.fr/facture-paiement/' + vendorId
     )
@@ -6293,16 +6323,31 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
         '.alert-container alert-container-sm alert-danger mb-0'
       )
     ])
-
     const redFrame = await this.runInWorker('checkRedFrame')
     if (redFrame !== null) {
       this.log('warn', 'Website did not load the bills')
       throw new Error('VENDOR_DOWN')
     }
-
+    let billsToFetch
     const recentBills = await this.runInWorker('getRecentBillsFromInterceptor')
     const saveBillsEntries = []
-    for (const bill of recentBills.billsHistory.billList) {
+    if (!FORCE_FETCH_ALL) {
+      const allRecentBills = recentBills.billsHistory.billList
+      // FORCE_FETCH_ALL being define priorly, if we're meeting this condition,
+      // we just need to look for 3 month back maximum.
+      // In order to get the fastest execution possible, we're checking how many months we got to cover since last execution
+      // as the website is providing one bill a month in most cases, while special cases will be covered from one month to another.
+      let numberToFetch = Math.ceil(distanceInDays / 30)
+      this.log(
+        'info',
+        `Fetching ${numberToFetch} ${numberToFetch > 1 ? 'bills' : 'bill'}`
+      )
+      billsToFetch = allRecentBills.slice(0, numberToFetch)
+    } else {
+      this.log('info', 'Fetching all bills')
+      billsToFetch = recentBills.billsHistory.billList
+    }
+    for (const bill of billsToFetch) {
       const amount = bill.amount / 100
       const vendorRef = bill.id || bill.tecId
       saveBillsEntries.push({
@@ -6622,6 +6667,13 @@ async function hashVendorRef(vendorRef) {
   const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('') // convert bytes to hex string
   return hashHex
+}
+
+function getDateDistanceInDays(dateString) {
+  const distanceMs = Date.now() - new Date(dateString).getTime()
+  const days = 1000 * 60 * 60 * 24
+
+  return Math.floor(distanceMs / days)
 }
 
 })();
