@@ -5870,11 +5870,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
-/* harmony import */ var _interceptor__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(51);
 /* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(44);
 /* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(ky_umd__WEBPACK_IMPORTED_MODULE_4__);
-/* eslint no-console: off */
-
+/* harmony import */ var _interceptor__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(51);
+/* eslint-disable no-console */
 
 
 
@@ -5899,15 +5898,17 @@ const JSON_HEADERS = {
   'Content-Type': 'application/json'
 }
 
-const BASE_URL = 'https://espace-client.orange.fr'
-const DEFAULT_PAGE_URL = BASE_URL + '/accueil'
-const LOGIN_FORM_PAGE = 'https://login.orange.fr/'
+const ERROR_URL = 'https://e.orange.fr/error403.html?ref=idme-ssr&status=error'
+const BASE_URL = 'https://www.orange.fr/portail'
+const DEFAULT_PAGE_URL = 'https://espace-client.orange.fr/accueil'
 let FORCE_FETCH_ALL = false
-
 const interceptor = new _interceptor__WEBPACK_IMPORTED_MODULE_3__["default"]()
 interceptor.init()
 
 class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__.ContentScript {
+  // ///////
+  // PILOT//
+  // ///////
   async onWorkerEvent({ event, payload }) {
     if (event === 'loginSubmit') {
       const { login, password } = payload || {}
@@ -5941,8 +5942,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     // Necessary here for the interception to cover every known scenarios
     // Doing so we ensure if the logout leads to the password step that the listener won't start until the user has filled up the login
-    await this.waitForElementNoReload('#login-label')
-    await this.waitForElementNoReload('#password')
+    await this.waitForDomReady()
     if (
       !(await this.checkForElement('#remember')) &&
       (await this.checkForElement('#password'))
@@ -5953,93 +5953,254 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       )
     } else {
       const checkBox = document.querySelector('#remember')
-      checkBox.click()
-      // Setting the visibility to hidden on the parent to make the element disapear
-      // preventing users to click it
-      checkBox.parentNode.parentNode.style.visibility = 'hidden'
+      if (checkBox) {
+        checkBox.click()
+        // Setting the visibility to hidden on the parent to make the element disapear
+        // preventing users to click it
+        checkBox.parentNode.parentNode.style.visibility = 'hidden'
+      }
     }
     this.log('info', 'password element found, adding listener')
     addClickListener.bind(this)()
   }
 
-  async navigateToLoginForm() {
-    this.log('info', 'navigateToLoginForm starts')
-    await this.goto(LOGIN_FORM_PAGE)
-    await Promise.race([
-      this.waitForElementInWorker('#login-label'),
-      this.waitForElementInWorker('#password-label'),
-      this.waitForElementInWorker('button[data-testid="button-keepconnected"]'),
-      this.waitForElementInWorker('div[class*="captcha_responseContainer"]'),
-      this.waitForElementInWorker('#undefined-label')
-    ])
-    const loginLabelPresent = await this.isElementInWorker('#login-label')
-    this.log('info', 'loginLabelPresent: ' + loginLabelPresent)
-    const passwordLabelPresent = await this.isElementInWorker('#password-label')
-    this.log('info', 'passwordLabelPresent: ' + passwordLabelPresent)
-    const keepConnectedPresent = await this.isElementInWorker(
-      'button[data-testid="button-keepconnected"]'
-    )
-    this.log('info', 'keepConnectedPresent: ' + keepConnectedPresent)
-    const captchaPresent = await this.isElementInWorker(
-      'div[class*="captcha_responseContainer"]'
-    )
-    this.log('info', 'captchaPresent: ' + captchaPresent)
-    const undefinedLabelPresent = await this.isElementInWorker(
-      '#undefined-label'
-    )
-    this.log('info', 'undefinedLabelPresent: ' + undefinedLabelPresent)
-    await this.handleCaptcha()
-    await this.handleKeepConnected('changeAccount')
+  async PromiseRaceWithError(promises, msg) {
+    try {
+      this.log('debug', msg)
+      await Promise.race(promises)
+    } catch (err) {
+      this.log('error', err.message)
+      throw new Error(`${msg} failed to meet conditions`)
+    }
   }
 
-  async ensureAuthenticated({ account }) {
+  /**
+   * Sometimes, depending on the device, #undefined-label may not be clickable yet
+   * we click on it until it disappears
+   */
+  async waitForUndefinedLabelReallyClicked() {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(
+      function clickOnElementUntilItDisapear() {
+        const elem = document.querySelector('#undefined-label')
+        if (elem) {
+          elem.click()
+          return false
+        }
+        return true
+      },
+      {
+        interval: 1000,
+        timeout: {
+          milliseconds: 30 * 1000,
+          message: new p_wait_for__WEBPACK_IMPORTED_MODULE_2__.TimeoutError(
+            `waitForUndefinedLabelReallyClicked timed out after ${30 * 1000}ms`
+          )
+        }
+      }
+    )
+    return true
+  }
+
+  async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
     this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
-    if (!account) {
-      await this.ensureNotAuthenticated()
-    }
-    await this.navigateToLoginForm()
+    await this.ensureNotAuthenticated()
     const credentials = await this.getCredentials()
     if (credentials) {
       this.log('info', 'found credentials, processing')
-      await this.tryAutoLogin(credentials)
+      await this.autoLogin(credentials)
     } else {
       this.log('info', 'no credentials found, use normal user login')
       await this.waitForUserAuthentication()
     }
   }
 
+  async getContracts() {
+    return interceptor.userInfos.portfolio.contracts
+      .map(contract => ({
+        vendorId: contract.cid,
+        brand: contract.brand.toLowerCase(),
+        label: contract.offerName.match(/\d{1,3},\d{2}€/)
+          ? contract.offerName.replace(/\s\d{1,3},\d{2}€/, '')
+          : contract.offerName,
+        type: contract.vertical.toLowerCase() === 'mobile' ? 'phone' : 'isp',
+        holder: contract.holder,
+        number: contract.telco.publicNumber
+      }))
+      .filter(contract => contract.brand === 'orange')
+  }
+
+  getCurrentState() {
+    const isErrorUrl = window.location.href.includes('error')
+    const isLoginPage = Boolean(document.querySelector('#login'))
+    const isPasswordAlone = Boolean(
+      document.querySelector('#password') && !isLoginPage
+    )
+    const isAccountList = Boolean(document.querySelector('#undefined-label'))
+    const isReloadButton = Boolean(
+      document.querySelector('button[data-testid="button-reload"]')
+    )
+    const isKeepConnected = Boolean(
+      document.querySelector('button[data-testid="button-keepconnected"]')
+    )
+    const isCaptcha = Boolean(
+      document.querySelector('div[class*="captcha_responseContainer"]')
+    )
+    const isConnected = Boolean(
+      document.querySelector('[data-oevent-action=sedeconnecter]')
+    )
+    const isDisconnected = Boolean(
+      document.querySelector('[data-oevent-action=identifiezvous]')
+    )
+    const isConsentPage = Boolean(
+      document.querySelector('#didomi-notice-disagree-button')
+    )
+    if (isErrorUrl) return 'errorPage'
+    else if (isLoginPage) return 'loginPage'
+    else if (isConnected) return 'connected'
+    else if (isPasswordAlone) return 'passwordAlonePage'
+    else if (isCaptcha) return 'captchaPage'
+    else if (isKeepConnected) return 'keepConnectedPage'
+    else if (isAccountList) return 'accountListPage'
+    else if (isReloadButton) return 'reloadButtonPage'
+    else if (isDisconnected) return 'disconnectedPage'
+    else if (isConsentPage) return 'consentPage'
+    else return false
+  }
+
+  async triggerNextState(currentState) {
+    if (currentState === 'errorPage') {
+      this.log('error', `Got an error page: ${window.location.href}`)
+      throw new Error(`VENDOR_DOWN`)
+    } else if (currentState === 'consentPage') {
+      await this.runInWorker('click', '#didomi-notice-disagree-button')
+    } else if (currentState === 'loginPage') {
+      return true
+    } else if (currentState === 'connected') {
+      await this.runInWorker('click', '[data-oevent-action=sedeconnecter]')
+    } else if (currentState === 'passwordAlonePage') {
+      await this.runInWorker('click', '#changeAccountLink')
+    } else if (currentState === 'captchaPage') {
+      await this.handleCaptcha()
+    } else if (currentState === 'keepConnectedPage') {
+      await this.runInWorker(
+        'click',
+        'button[data-testid="button-keepconnected"]'
+      )
+    } else if (currentState === 'accountListPage') {
+      await this.runInWorkerUntilTrue({
+        method: 'waitForUndefinedLabelReallyClicked',
+        timeout: 10 * 1000
+      })
+    } else if (currentState === 'reloadButtonPage') {
+      await this.runInWorker('click', 'button[data-testid="button-reload"]')
+    } else if (currentState === 'disconnectedPage') {
+      await this.runInWorker('click', '[data-oevent-action=identifiezvous]')
+    } else {
+      throw new Error(`Unknown page state: ${currentState}`)
+    }
+  }
+
+  async waitForNextState(previousState) {
+    let currentState
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(
+      () => {
+        currentState = this.getCurrentState()
+        this.log('info', 'waitForNextState: currentState ' + currentState)
+        if (currentState === false) return false
+        const result = previousState !== currentState
+        return result
+      },
+      {
+        interval: 1000,
+        timeout: {
+          milliseconds: 30 * 1000,
+          message: new p_wait_for__WEBPACK_IMPORTED_MODULE_2__.TimeoutError(
+            `waitForNextState timed out after ${
+              30 * 1000
+            }ms waiting for a state different from ${previousState}`
+          )
+        }
+      }
+    )
+    return currentState
+  }
+
   async ensureNotAuthenticated() {
-    this.log('info', '📍️ ensureNotAuthenticated starts')
-    await this.goto(DEFAULT_PAGE_URL)
+    this.log('info', '🤖 ensureNotAuthenticated starts')
+    await this.goto(BASE_URL)
     await this.waitForElementInWorker(
-      '.menu, #password, div[class*="captcha_responseContainer"], button[data-testid="button-keepconnected"], [data-oevent-action="identifiezvous"]'
+      '[data-oevent-action=identifiezvous], .o-ribbon-is-connected, #oecs__connecte-se-deconnecter'
     )
-    const connectionButton = await this.isElementInWorker(
-      '[data-oevent-action="identifiezvous"]'
+    const start = Date.now()
+    let state = await this.runInWorker('getCurrentState')
+    while (state !== 'loginPage') {
+      this.log('debug', `current state: ${state}`)
+      if (Date.now() - start > 300 * 1000) {
+        throw new Error('ensureNotAuthenticated took more than 5m')
+      }
+      await this.triggerNextState(state)
+      state = await this.runInWorkerUntilTrue({
+        method: 'waitForNextState',
+        args: [state],
+        timeout: 20 * 1000
+      })
+    }
+    return true
+  }
+
+  async checkAuthenticated() {
+    const isGoodUrl = document.location.href.includes(BASE_URL)
+    const isConnectedElementPresent = Boolean(
+      document.querySelector('.o-ribbon-is-connected')
     )
-    if (connectionButton) {
-      this.log('info', 'Already logged out, continue')
-      return true
+    const isDisconnectElementPresent = Boolean(
+      document.querySelector('[data-oevent-action=sedeconnecter]')
+    )
+    if (isGoodUrl) {
+      if (isConnectedElementPresent) {
+        this.log('info', 'Check Authenticated succeeded')
+        return true
+      }
+      if (isDisconnectElementPresent) {
+        this.log('info', 'Active session found, returning true')
+        return true
+      }
     }
-    const isLogged = await this.isElementInWorker('.menu')
-    if (isLogged) {
-      await this.logout()
-      return true
-    }
-    await this.handleCaptcha()
-    const isLoggedOut = await this.handleKeepConnected('logout')
-    if (isLoggedOut) {
-      this.log('info', 'handleKeepConnected - Logout successful')
-      return true
-    }
-    const authenticated = await this.runInWorker('checkAuthenticated')
-    if (authenticated === false) {
-      this.log('info', 'Already not authenticated')
-      return true
-    }
-    this.log('info', 'authenticated, triggering the deconnection')
-    await this.logout()
+    return false
+  }
+
+  async waitForUserAuthentication() {
+    this.log('info', '🤖 waitForUserAuthentication start')
+    await this.setWorkerState({ visible: true })
+    await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
+    await this.setWorkerState({ visible: false })
+  }
+
+  async waitForErrorUrl() {
+    await this.runInWorkerUntilTrue({
+      method: 'checkErrorUrl',
+      timeout: 10 * 1000
+    })
+    this.log('error', `Found error url: ${ERROR_URL}`)
+    throw new Error('VENDOR_DOWN')
+  }
+
+  async checkErrorUrl() {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(
+      () => {
+        return window.location.href === ERROR_URL
+      },
+      {
+        interval: 1000,
+        timeout: {
+          milliseconds: 30 * 1000,
+          message: new p_wait_for__WEBPACK_IMPORTED_MODULE_2__.TimeoutError(
+            `waitForErrorUrl timed out after ${30 * 1000}ms`
+          )
+        }
+      }
+    )
     return true
   }
 
@@ -6054,72 +6215,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
   }
 
-  async handleKeepConnected(option) {
-    this.log('info', `📍️ handleKeepConnected for ${option} starts`)
-    const isShowingKeepConnected = await this.isElementInWorker(
-      'button[data-testid="button-keepconnected"]'
-    )
-    const isShowingPasswordStep = await this.isElementInWorker('#password')
-    const isShowingLoginStep = await this.isElementInWorker('#login-label')
-    this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
-    this.log('info', 'isShowingPasswordStep: ' + isShowingPasswordStep)
-    if (option === 'changeAccount') {
-      // always choose to login on another account
-      if (isShowingKeepConnected || isShowingPasswordStep) {
-        await this.clickAndWait('#changeAccountLink', '#undefined-label')
-        if (await this.isElementInWorker('#undefined-label')) {
-          await this.clickAndWait('#undefined-label', '#login-label')
-        }
-        return true
-      } else if (isShowingLoginStep) {
-        this.log('info', `Last action leads directly to login step`)
-        return true
-      }
-    }
-    if (option === 'logout') {
-      if (isShowingKeepConnected) {
-        await this.clickAndWait(
-          'button[data-testid="button-keepconnected"]',
-          '.menu'
-        )
-        await this.logout()
-        return true
-      }
-    }
-    this.log('warn', `Option "${option}" leads to unknown case`)
-    return false
-  }
-
-  async checkAuthenticated() {
-    const isGoodUrl = document.location.href.includes(
-      'https://www.orange.fr/portail'
-    )
-    const isConnectedRibbonPresent = Boolean(
-      document.querySelector('.o-ribbon-is-connected')
-    )
-    if (isGoodUrl && isConnectedRibbonPresent) {
-      this.log('info', 'Check Authenticated succeeded')
-      return true
-    }
-    return false
-  }
-
-  async waitForUserAuthentication() {
-    this.log('info', 'waitForUserAuthentication start')
-    await this.setWorkerState({
-      visible: true
-    })
-    await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
-    await this.setWorkerState({
-      visible: false
-    })
-  }
-
-  async tryAutoLogin(credentials) {
-    this.log('info', 'Trying autologin')
-    await this.autoLogin(credentials)
-  }
-
   async autoLogin(credentials) {
     this.log('info', 'Autologin start')
     const emailSelector = '#login'
@@ -6132,15 +6227,31 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       await this.runInWorker('fillForm', credentials)
       await this.runInWorker('click', loginButtonSelector)
     }
-    await Promise.race([
-      this.waitForElementInWorker('button[data-testid="button-keepconnected"]'),
-      this.waitForElementInWorker(passwordInputSelector)
-    ])
+
+    await this.PromiseRaceWithError(
+      [
+        this.waitForElementInWorker(
+          'button[data-testid="button-keepconnected"]'
+        ),
+        this.waitForElementInWorker('button[data-testid="button-reload"]'),
+        this.waitForElementInWorker(passwordInputSelector),
+        this.waitForErrorUrl()
+      ],
+      'autoLogin: page load after submit'
+    )
 
     const isShowingKeepConnected = await this.isElementInWorker(
       'button[data-testid="button-keepconnected"]'
     )
     this.log('info', 'isShowingKeepConnected: ' + isShowingKeepConnected)
+    const isShowingButtonReload = await this.isElementInWorker(
+      'button[data-testid="button-reload"]'
+    )
+    this.log('info', 'isShowingButtonReload: ' + isShowingButtonReload)
+
+    if (isShowingButtonReload) {
+      await this.runInWorker('click', 'button[data-testid="button-reload"]')
+    }
 
     if (isShowingKeepConnected) {
       await this.runInWorker(
@@ -6154,23 +6265,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await this.runInWorker('click', loginButtonSelector)
   }
 
-  async logout() {
-    this.log('info', '📍️ logout starts')
-    await this.clickAndWait(
-      '#o-identityLink',
-      'a[data-oevent-action="sedeconnecter"]'
-    )
-    try {
-      await this.clickAndWait(
-        'a[data-oevent-action="sedeconnecter"]',
-        'a[data-oevent-action="identifiez-vous"]'
-      )
-    } catch (e) {
-      log('error', 'Not completly disconnected, never found the second link')
-      throw e
-    }
-  }
-
   async fetch(context) {
     this.log('info', '🤖 fetch start')
     const distanceInDays = await this.handleContextInfos(context)
@@ -6179,10 +6273,10 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
     await this.goto(DEFAULT_PAGE_URL)
     await this.waitForElementInWorker('.menu')
+
     const contracts = await this.runInWorker('getContracts')
-    let counter = 1
+
     for (const contract of contracts) {
-      this.log('info', `Fetching ${counter}/${contracts.length} contract`)
       const { recentBills, oldBillsUrl } = await this.fetchRecentBills(
         contract.vendorId,
         distanceInDays
@@ -6209,14 +6303,11 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
             contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
         })
       }
-      counter++
     }
 
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
     await this.saveIdentity({ contact: this.store.infosIdentity })
-    // Logging out every run to avoid in between scenarios and sosh/orange mismatched sessions
-    await this.logout()
   }
 
   async handleContextInfos(context) {
@@ -6240,23 +6331,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       this.log('info', '🐇️ Quick execution')
     }
     return distanceInDays
-  }
-
-  async getContracts() {
-    this.log('info', '📍️ getContracts starts')
-    return interceptor.userInfos.portfolio.contracts
-      .map(contract => ({
-        vendorId: contract.cid,
-        brand: contract.brand.toLowerCase(),
-        // eslint-disable-next-line no-useless-escape
-        label: contract.offerName.match(/\d{1,3},\d{2}€/)
-          ? contract.offerName.replace(/\s\d{1,3},\d{2}€/, '')
-          : contract.offerName,
-        type: contract.vertical.toLowerCase() === 'mobile' ? 'phone' : 'isp',
-        holder: contract.holder,
-        number: contract.telco.publicNumber
-      }))
-      .filter(contract => contract.brand === 'orange')
   }
 
   async fetchOldBills({ oldBillsUrl, vendorId }) {
@@ -6308,28 +6382,26 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return saveBillsEntries
   }
 
-  async getRecentBillsFromInterceptor() {
-    return interceptor.recentBills
-  }
-
   async fetchRecentBills(vendorId, distanceInDays) {
     await this.goto(
       'https://espace-client.orange.fr/facture-paiement/' + vendorId
     )
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
-    await Promise.race([
-      this.waitForElementInWorker('[data-e2e="bh-more-bills"]'),
-      this.waitForElementInWorker('.alert-icon icon-error-severe'),
-      this.waitForElementInWorker(
-        '.alert-container alert-container-sm alert-danger mb-0'
-      )
-    ])
-    const redFrame = await this.runInWorker('checkRedFrame')
-    if (redFrame !== null) {
-      this.log('warn', 'Website did not load the bills')
-      throw new Error('VENDOR_DOWN')
-    }
+    await this.PromiseRaceWithError(
+      [
+        this.runInWorkerUntilTrue({
+          method: 'checkMoreBillsButton',
+          timeout: 10 * 1000
+        }),
+        this.waitForElementInWorker('.alert-icon icon-error-severe'),
+        this.waitForElementInWorker(
+          '.alert-container alert-container-sm alert-danger mb-0'
+        )
+      ],
+      'fetchRecentBills: show bills history'
+    )
+
     let billsToFetch
     const recentBills = await this.runInWorker('getRecentBillsFromInterceptor')
     const saveBillsEntries = []
@@ -6392,6 +6464,37 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return { recentBills: saveBillsEntries, oldBillsUrl }
   }
 
+  async checkMoreBillsButton() {
+    this.log('info', '📍️ checkMoreBillsButton starts')
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(
+      () => {
+        const moreBillsButton = document.querySelector(
+          '[data-e2e="bh-more-bills"]'
+        )
+
+        if (moreBillsButton) {
+          this.log('info', 'moreBillsButton found, returning true')
+          return true
+        } else {
+          this.log('info', 'no moreBillsButton, checking bills length')
+          const billsLength = document.querySelectorAll(
+            '[data-e2e="bh-bill-table-line"]'
+          ).length
+          if (billsLength <= 12) {
+            this.log('info', '12 or less bills found')
+            return true
+          }
+          return false
+        }
+      },
+      {
+        interval: 1000,
+        timeout: 30 * 1000
+      }
+    )
+    return true
+  }
+
   async navigateToPersonalInfos() {
     this.log('info', 'navigateToPersonalInfos starts')
     if (!(await this.isElementInWorker('#o-identityLink'))) {
@@ -6410,88 +6513,18 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await this.waitForElementInWorker('p', {
       includesText: 'Infos de contact'
     })
-    await this.runInWorker('click', 'p', {
-      includesText: 'Infos de contact'
-    })
-    this.log('info', 'Promise.all')
+    await this.runInWorker('click', 'p', { includesText: 'Infos de contact' })
     await Promise.all([
       this.waitForElementInWorker(
-        '[data-e2e="btn-contact-info-modifier-votre-identite"]'
+        'a[data-e2e="btn-contact-info-modifier-votre-identite"]'
       ),
       this.waitForElementInWorker(
-        '[data-e2e="btn-contact-info-modifier-vos-coordonnees"]'
+        'a[data-e2e="btn-contact-info-modifier-vos-coordonnees"]'
       ),
       this.waitForElementInWorker(
-        '[data-e2e="btn-contact-info-modifier-vos-adresses-postales"]'
+        'a[data-e2e="btn-contact-info-modifier-vos-adresses-postales"]'
       )
     ])
-  }
-
-  async getIdentity() {
-    this.log('info', 'getIdentity starts')
-    const addressInfos = interceptor.userInfos.billingAddresses?.[0]
-    const phoneNumber =
-      interceptor.userInfos.portfolio?.contracts?.[0]?.telco?.publicNumber
-    const address = []
-    if (addressInfos) {
-      const houseNumber = addressInfos.postalAddress?.streetNumber?.number
-      const streetType = addressInfos.postalAddress?.street?.type
-      const streetName = addressInfos.postalAddress?.street?.name
-      const street =
-        streetType && streetName ? `${streetType} ${streetName}` : undefined
-      const postCode = addressInfos.postalAddress?.postalCode
-      const city = addressInfos.postalAddress?.cityName
-      const formattedAddress =
-        houseNumber && street && postCode && city
-          ? `${houseNumber} ${street} ${postCode} ${city}`
-          : undefined
-      address.push({
-        houseNumber,
-        street,
-        postCode,
-        city,
-        formattedAddress
-      })
-    }
-    const infosIdentity = {
-      name: {
-        givenName: interceptor.userInfos.identification?.identity?.firstName,
-        lastName: interceptor.userInfos.identification?.identity?.lastName
-      },
-      mail: [
-        {
-          address:
-            interceptor.userInfos.identification?.contactInformation?.email
-              ?.address
-        }
-      ],
-      address
-    }
-
-    if (phoneNumber && phoneNumber.match) {
-      infosIdentity.phone = [
-        {
-          type: phoneNumber.match(/^06|07|\+336|\+337/g) ? 'mobile' : 'home',
-          number: phoneNumber
-        }
-      ]
-    }
-    await this.sendToPilot({
-      infosIdentity
-    })
-  }
-
-  async fillForm(credentials) {
-    if (document.querySelector('#login')) {
-      this.log('info', 'filling email field')
-      document.querySelector('#login').value = credentials.login
-      return
-    }
-    if (document.querySelector('#password')) {
-      this.log('info', 'filling password field')
-      document.querySelector('#password').value = credentials.password
-      return
-    }
   }
 
   async waitForUserAction(url) {
@@ -6523,71 +6556,97 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     }
   }
 
-  async getUserMail() {
-    return window.o_idzone?.USER_MAIL_ADDRESS
+  // ////////
+  // WORKER//
+  // ////////
+
+  async getOldBillsFromWorker(oldBillsUrl) {
+    const OLD_BILLS_URL_PREFIX =
+      'https://espace-client.orange.fr/ecd_wp/facture/historicBills'
+    return await ky_umd__WEBPACK_IMPORTED_MODULE_4___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
+        headers: {
+          ...ORANGE_SPECIAL_HEADERS,
+          ...JSON_HEADERS
+        }
+      })
+      .json()
   }
 
-  async findAndSendCredentials(loginField) {
-    this.log('info', 'getting in findAndSendCredentials')
-    let userLogin = loginField.innerHTML
-      .replace('<strong>', '')
-      .replace('</strong>', '')
-    let divPassword = document.querySelector('#password').value
-    const userCredentials = {
-      email: userLogin,
-      password: divPassword
-    }
-
-    return userCredentials
+  async getRecentBillsFromInterceptor() {
+    return interceptor.recentBills
   }
 
-  async checkRedFrame() {
-    const redFrame = document.querySelector('.alert-icon icon-error-severe')
-    const oldBillsRedFrame = document.querySelector(
-      '.alert-container alert-container-sm alert-danger mb-0'
-    )
-    if (redFrame) return redFrame
-    if (oldBillsRedFrame) return oldBillsRedFrame
-    return null
-  }
-
-  async getTestEmail() {
-    this.log('info', 'Getting in getTestEmail')
-    const mail = document.querySelector(
-      'p[data-testid="selected-account-login"]'
-    )
-    const mailList = document.querySelector('ul[data-testid="accounts-list"]')
-    if (mail) {
-      const testEmail = mail.textContent
-      const type = 'mail'
-      if (testEmail) {
-        return { testEmail, type }
-      }
-      return null
-    }
-    if (mailList) {
-      const rawMail = mailList.children[0].querySelector('a').getAttribute('id')
-      const testEmail = rawMail.split('choose-account-')[1]
-      const type = 'mailList'
-      if (testEmail) {
-        return { testEmail, type }
-      }
-      return null
-    }
-  }
-
-  checkInfosConfirmation() {
-    const laterButton = document.querySelector('a[class="btn btn-secondary"]')
-    if (laterButton === null) {
+  async fillForm(credentials) {
+    if (document.querySelector('#login')) {
+      this.log('info', 'filling email field')
+      document.querySelector('#login').value = credentials.login
       return
     }
-    const textInButton = laterButton.textContent
-    if (textInButton === 'Ignorer') {
-      laterButton.click()
-    } else {
-      this.log('warn', 'seems like infos confirmation page has changed')
+    if (document.querySelector('#password')) {
+      this.log('info', 'filling password field')
+      document.querySelector('#password').value = credentials.password
+      return
     }
-    return
+  }
+
+  async getUserMail() {
+    const foundAddress = window.o_idzone?.USER_MAIL_ADDRESS
+    if (!foundAddress) {
+      throw new Error(
+        'Neither credentials or user mail address found, unexpected page reached'
+      )
+    }
+    return foundAddress
+  }
+
+  async getIdentity() {
+    this.log('info', 'getIdentity starts')
+    const addressInfos = interceptor.userInfos.billingAddresses?.[0]
+    const phoneNumber =
+      interceptor.userInfos.portfolio?.contracts?.[0]?.telco?.publicNumber
+    const address = []
+    if (addressInfos) {
+      const houseNumber = addressInfos.postalAddress?.streetNumber?.number
+      const streetType = addressInfos.postalAddress?.street?.type
+      const streetName = addressInfos.postalAddress?.street?.name
+      const street =
+        streetType && streetName ? `${streetType} ${streetName}` : undefined
+      const postCode = addressInfos.postalAddress?.postalCode
+      const city = addressInfos.postalAddress?.cityName
+      const formattedAddress =
+        houseNumber && street && postCode && city
+          ? `${houseNumber} ${street} ${postCode} ${city}`
+          : undefined
+      address.push({
+        houseNumber,
+        street,
+        postCode,
+        city,
+        formattedAddress
+      })
+    }
+    const infosIdentity = {
+      name: {
+        givenName:
+          interceptor.identification?.contracts?.[0]?.holder?.firstName,
+        lastName: interceptor.identification?.contracts?.[0]?.holder?.lastName
+      },
+      mail: interceptor.identification?.contactInformation?.email?.address,
+      address
+    }
+
+    if (phoneNumber && phoneNumber.match) {
+      infosIdentity.phone = [
+        {
+          type: phoneNumber.match(/^06|07|\+336|\+337/g) ? 'mobile' : 'home',
+          number: phoneNumber
+        }
+      ]
+    }
+
+    await this.sendToPilot({
+      infosIdentity
+    })
   }
 
   checkForCaptcha() {
@@ -6604,10 +6663,10 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async checkCaptchaResolution() {
     const passwordInput = document.querySelector('#password')
     const loginInput = document.querySelector('#login')
+    const otherAccountButton = document.querySelector('#undefined-label')
     const stayLoggedButton = document.querySelector(
       'button[data-testid="button-keepconnected"]'
     )
-    const otherAccountButton = document.querySelector('#undefined-label')
     if (passwordInput || loginInput || otherAccountButton || stayLoggedButton) {
       return true
     }
@@ -6622,18 +6681,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     return true
   }
 
-  async getOldBillsFromWorker(oldBillsUrl) {
-    const OLD_BILLS_URL_PREFIX =
-      'https://espace-client.orange.fr/ecd_wp/facture/historicBills'
-    return await ky_umd__WEBPACK_IMPORTED_MODULE_4___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
-        headers: {
-          ...ORANGE_SPECIAL_HEADERS,
-          ...JSON_HEADERS
-        }
-      })
-      .json()
-  }
-
   async getFileName(date, amount, vendorRef) {
     const digestId = await hashVendorRef(vendorRef)
     const shortenedId = digestId.substr(0, 5)
@@ -6646,21 +6693,23 @@ connector
   .init({
     additionalExposedMethodsNames: [
       'getUserMail',
-      'checkRedFrame',
-      'getTestEmail',
       'fillForm',
-      'checkInfosConfirmation',
+      'getIdentity',
       'checkForCaptcha',
       'waitForCaptchaResolution',
       'getFileName',
-      'getIdentity',
       'getRecentBillsFromInterceptor',
       'getOldBillsFromWorker',
-      'getContracts'
+      'waitForUndefinedLabelReallyClicked',
+      'checkErrorUrl',
+      'checkMoreBillsButton',
+      'getContracts',
+      'waitForNextState',
+      'getCurrentState'
     ]
   })
   .catch(err => {
-    log('warn', err)
+    log.warn(err)
   })
 
 async function hashVendorRef(vendorRef) {
