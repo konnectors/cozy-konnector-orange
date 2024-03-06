@@ -692,7 +692,6 @@ class OrangeContentScript extends ContentScript {
     // prefer credentials over user email since it may not be know by the user
     let sourceAccountIdentifier = credentialsLogin || storeLogin
     if (!sourceAccountIdentifier) {
-      await this.waitForElementInWorker('.o-identityLayer-detail')
       sourceAccountIdentifier = await this.runInWorker('getUserMail')
     }
 
