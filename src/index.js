@@ -37,8 +37,13 @@ class OrangeContentScript extends ContentScript {
   async onWorkerEvent({ event, payload }) {
     if (event === 'loginSubmit') {
       const { login, password } = payload || {}
-      if (login && password) {
-        this.store.userCredentials = { login, password }
+      // When the user has chosen mobileConnect option, there is no password request
+      // So wee need to check both separatly to ensure we got at least the user login
+      if (login) {
+        this.store.userCredentials = { ...this.store.userCredentials, login }
+      }
+      if (password) {
+        this.store.userCredentials = { ...this.store.userCredentials, password }
       } else {
         this.log('warn', 'Did not manage to intercept credentials')
       }
@@ -70,7 +75,7 @@ class OrangeContentScript extends ContentScript {
     await this.waitForDomReady()
     if (
       !(await this.checkForElement('#remember')) &&
-      (await this.checkForElement('#password'))
+      (await this.checkForElement('[data-testid=selected-account-login]'))
     ) {
       this.log(
         'warn',
@@ -85,7 +90,7 @@ class OrangeContentScript extends ContentScript {
         checkBox.parentNode.parentNode.style.visibility = 'hidden'
       }
     }
-    this.log('info', 'password element found, adding listener')
+    this.log('info', 'adding listener')
     addClickListener.bind(this)()
   }
 
