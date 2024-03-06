@@ -725,19 +725,6 @@ class OrangeContentScript extends ContentScript {
     return interceptor.recentBills
   }
 
-  async fillForm(credentials) {
-    if (document.querySelector('#login')) {
-      this.log('info', 'filling email field')
-      document.querySelector('#login').value = credentials.login
-      return
-    }
-    if (document.querySelector('#password')) {
-      this.log('info', 'filling password field')
-      document.querySelector('#password').value = credentials.password
-      return
-    }
-  }
-
   async getUserMail() {
     const foundAddress = window.o_idzone?.USER_MAIL_ADDRESS
     if (!foundAddress) {
@@ -847,7 +834,6 @@ connector
   .init({
     additionalExposedMethodsNames: [
       'getUserMail',
-      'fillForm',
       'getIdentity',
       'checkForCaptcha',
       'waitForCaptchaResolution',
