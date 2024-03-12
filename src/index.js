@@ -37,8 +37,13 @@ class OrangeContentScript extends ContentScript {
   async onWorkerEvent({ event, payload }) {
     if (event === 'loginSubmit') {
       const { login, password } = payload || {}
-      if (login && password) {
-        this.store.userCredentials = { login, password }
+      // When the user has chosen mobileConnect option, there is no password request
+      // So wee need to check both separatly to ensure we got at least the user login
+      if (login) {
+        this.store.userCredentials = { ...this.store.userCredentials, login }
+      }
+      if (password) {
+        this.store.userCredentials = { ...this.store.userCredentials, password }
       } else {
         this.log('warn', 'Did not manage to intercept credentials')
       }
@@ -70,7 +75,7 @@ class OrangeContentScript extends ContentScript {
     await this.waitForDomReady()
     if (
       !(await this.checkForElement('#remember')) &&
-      (await this.checkForElement('#password'))
+      (await this.checkForElement('[data-testid=selected-account-login]'))
     ) {
       this.log(
         'warn',
@@ -85,7 +90,7 @@ class OrangeContentScript extends ContentScript {
         checkBox.parentNode.parentNode.style.visibility = 'hidden'
       }
     }
-    this.log('info', 'password element found, adding listener')
+    this.log('info', 'adding listener')
     addClickListener.bind(this)()
   }
 
@@ -100,7 +105,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   /**
-   * Sometimes, depending on the device, #undefined-label may not be clickable yet
+   * Sometimes, depending on the device, [data-testid="choose-other-account"] may not be clickable yet
    * we click on it until it disappears
    */
   async waitForUndefinedLabelReallyClicked() {
@@ -663,7 +668,7 @@ class OrangeContentScript extends ContentScript {
         'a[data-e2e="btn-contact-info-modifier-votre-identite"]'
       ),
       this.waitForElementInWorker(
-        'a[data-e2e="btn-contact-info-modifier-vos-coordonnees"]'
+        'a[data-e2e="btn-contact-info-phone-modifier"]'
       ),
       this.waitForElementInWorker(
         'a[data-e2e="btn-contact-info-modifier-vos-adresses-postales"]'
@@ -687,7 +692,6 @@ class OrangeContentScript extends ContentScript {
     // prefer credentials over user email since it may not be know by the user
     let sourceAccountIdentifier = credentialsLogin || storeLogin
     if (!sourceAccountIdentifier) {
-      await this.waitForElementInWorker('.o-identityLayer-detail')
       sourceAccountIdentifier = await this.runInWorker('getUserMail')
     }
 
@@ -721,19 +725,6 @@ class OrangeContentScript extends ContentScript {
     return interceptor.recentBills
   }
 
-  async fillForm(credentials) {
-    if (document.querySelector('#login')) {
-      this.log('info', 'filling email field')
-      document.querySelector('#login').value = credentials.login
-      return
-    }
-    if (document.querySelector('#password')) {
-      this.log('info', 'filling password field')
-      document.querySelector('#password').value = credentials.password
-      return
-    }
-  }
-
   async getUserMail() {
     const foundAddress = window.o_idzone?.USER_MAIL_ADDRESS
     if (!foundAddress) {
@@ -745,10 +736,24 @@ class OrangeContentScript extends ContentScript {
   }
 
   async getIdentity() {
-    this.log('info', 'getIdentity starts')
+    this.log('info', '📍️ getIdentity starts')
+    const idInfos = interceptor.userInfos?.identification?.identity
+    const contactInfos =
+      interceptor.userInfos?.identification?.contactInformation
     const addressInfos = interceptor.userInfos.billingAddresses?.[0]
-    const phoneNumber =
-      interceptor.userInfos.portfolio?.contracts?.[0]?.telco?.publicNumber
+    const mobileNumber =
+      contactInfos.mobile?.status === 'valid'
+        ? contactInfos.mobile.number
+        : null
+    const homeNumber =
+      contactInfos.landline?.status === 'valid'
+        ? contactInfos.landline.number
+        : null
+    const email =
+      contactInfos?.email?.status === 'valid'
+        ? contactInfos?.email?.address
+        : null
+
     const address = []
     if (addressInfos) {
       const streetNumber = addressInfos.postalAddress?.streetNumber?.number
@@ -772,26 +777,31 @@ class OrangeContentScript extends ContentScript {
     }
     const infosIdentity = {
       name: {
-        givenName:
-          interceptor.identification?.contracts?.[0]?.holder?.firstName,
-        lastName: interceptor.identification?.contracts?.[0]?.holder?.lastName
+        givenName: idInfos?.firstName,
+        lastName: idInfos?.lastName
       },
-      email: [
-        {
-          address:
-            interceptor.identification?.contactInformation?.email?.address
-        }
-      ],
       address
     }
-
-    if (phoneNumber && phoneNumber.match) {
-      infosIdentity.phone = [
-        {
-          type: phoneNumber.match(/^06|07|\+336|\+337/g) ? 'mobile' : 'home',
-          number: phoneNumber
-        }
-      ]
+    if (email) {
+      infosIdentity.email = []
+      infosIdentity.email.push({
+        address: email
+      })
+    }
+    if (mobileNumber || homeNumber) {
+      infosIdentity.phone = []
+      if (mobileNumber) {
+        infosIdentity.phone.push({
+          type: 'mobile',
+          number: mobileNumber
+        })
+      }
+      if (homeNumber) {
+        infosIdentity.phone.push({
+          type: 'home',
+          number: homeNumber
+        })
+      }
     }
 
     await this.sendToPilot({
@@ -813,7 +823,9 @@ class OrangeContentScript extends ContentScript {
   async checkCaptchaResolution() {
     const passwordInput = document.querySelector('#password')
     const loginInput = document.querySelector('#login')
-    const otherAccountButton = document.querySelector('#undefined-label')
+    const otherAccountButton = document.querySelector(
+      '[data-testid="choose-other-account"]'
+    )
     const stayLoggedButton = document.querySelector(
       'button[data-testid="button-keepconnected"]'
     )
@@ -843,7 +855,6 @@ connector
   .init({
     additionalExposedMethodsNames: [
       'getUserMail',
-      'fillForm',
       'getIdentity',
       'checkForCaptcha',
       'waitForCaptchaResolution',
