@@ -5962,6 +5962,9 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const isCaptcha = Boolean(
       document.querySelector('div[class*="captcha_responseContainer"]')
     )
+    const isMobileconnect = document.querySelector(
+      'button[data-testid="submit-mc"]'
+    )
     const elcosHeader = document.querySelector('#o-header > elcos-header')
     const isConnected = elcosHeader
       ? Boolean(
@@ -5987,6 +5990,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     else if (isCaptcha) return 'captchaPage'
     else if (isKeepConnected) return 'keepConnectedPage'
     else if (isAccountList) return 'accountListPage'
+    else if (isMobileconnect) return 'mobileConnectPage'
     else if (isReloadButton) return 'reloadButtonPage'
     else if (isDisconnected) return 'disconnectedPage'
     else if (isConsentPage) return 'consentPage'
@@ -6008,7 +6012,10 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
           .shadowRoot.querySelector('[data-oevent-action=sedeconnecter]')
           .click()
       })
-    } else if (currentState === 'passwordAlonePage') {
+    } else if (
+      currentState === 'passwordAlonePage' ||
+      currentState === 'mobileConnectPage'
+    ) {
       await this.runInWorker('click', '[data-testid=change-account]')
     } else if (currentState === 'captchaPage') {
       await this.handleCaptcha()
