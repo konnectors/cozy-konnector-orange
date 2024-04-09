@@ -244,6 +244,7 @@ class OrangeContentScript extends ContentScript {
       currentState === 'passwordAlonePage' ||
       currentState === 'mobileConnectPage'
     ) {
+      await this.waitForElementInWorker('[data-testid=change-account]')
       await this.runInWorker('click', '[data-testid=change-account]')
     } else if (currentState === 'captchaPage') {
       await this.handleCaptcha()
@@ -429,9 +430,7 @@ class OrangeContentScript extends ContentScript {
     }
     await this.goto(DEFAULT_PAGE_URL)
     await this.waitForElementInWorker('.menu')
-
     const contracts = await this.runInWorker('getContracts')
-
     for (const contract of contracts) {
       const { recentBills, oldBillsUrl } = await this.fetchRecentBills(
         contract.vendorId,
@@ -445,7 +444,11 @@ class OrangeContentScript extends ContentScript {
         qualificationLabel:
           contract.type === 'phone' ? 'phone_invoice' : 'isp_invoice'
       })
-      if (FORCE_FETCH_ALL) {
+      // Due to recent changes in Orange's way to handle contracts
+      // oldbillsUrl might not be present in the intercepted response
+      // Perhaps it will appears differently if it does (when newly created contract will have an history to show)
+      // Fortunately the account we dispose to develop has just been migrated to this new handling so we might be able to do something when it happen
+      if (FORCE_FETCH_ALL && oldBillsUrl) {
         const oldBills = await this.fetchOldBills({
           oldBillsUrl,
           vendorId: contract.vendorId
