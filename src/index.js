@@ -226,6 +226,7 @@ class OrangeContentScript extends ContentScript {
   }
 
   async triggerNextState(currentState) {
+    this.log('info', '📍️ triggerNextState starts')
     if (currentState === 'errorPage') {
       this.log('error', `Got an error page: ${window.location.href}`)
       throw new Error(`VENDOR_DOWN`)
@@ -474,8 +475,13 @@ class OrangeContentScript extends ContentScript {
     const { trigger } = context
     // force fetch all data (the long way) when last trigger execution is older than 90 days
     // or when the last job was an error
+    const isFirstJob =
+      !trigger.current_state?.last_failure &&
+      !trigger.current_state?.last_success
     const isLastJobError =
+      !isFirstJob &&
       trigger.current_state?.last_failure > trigger.current_state?.last_success
+
     const hasLastExecution = Boolean(trigger.current_state?.last_execution)
     const distanceInDays = getDateDistanceInDays(
       trigger.current_state?.last_execution
@@ -545,6 +551,20 @@ class OrangeContentScript extends ContentScript {
     await this.goto(
       'https://espace-client.orange.fr/facture-paiement/' + vendorId
     )
+    await this.PromiseRaceWithError([
+      this.waitForElementInWorker('a[href*="/historique-des-factures"]'),
+      // Visible reload button in case of error
+      this.waitForElementInWorker(
+        `a[href="/facture-paiement/${vendorId}"][data-e2e="fact-shootAgain"]`
+      )
+    ])
+    if (
+      await this.isElementInWorker(
+        `a[href="/facture-paiement/${vendorId}"][data-e2e="fact-shootAgain"]`
+      )
+    ) {
+      await this.reloadBillsPage(vendorId)
+    }
     await this.waitForElementInWorker('a[href*="/historique-des-factures"]')
     await this.runInWorker('click', 'a[href*="/historique-des-factures"]')
     await this.PromiseRaceWithError(
@@ -691,6 +711,28 @@ class OrangeContentScript extends ContentScript {
     await this.setWorkerState({ visible: true, url })
     await this.runInWorkerUntilTrue({ method: 'waitForCaptchaResolution' })
     await this.setWorkerState({ visible: false, url })
+  }
+
+  async reloadBillsPage(vendorId) {
+    this.log('info', '📍️ reloadBillsPage starts')
+    await this.runInWorker(
+      'click',
+      `a[href="/facture-paiement/${vendorId}"][data-e2e="fact-shootAgain"]`
+    )
+    await this.PromiseRaceWithError([
+      this.waitForElementInWorker('a[href*="/historique-des-factures"]'),
+      this.waitForElementInWorker(
+        `a[href="/facture-paiement/${vendorId}"][data-e2e="fact-shootAgain"]`
+      )
+    ])
+    if (
+      await this.isElementInWorker(
+        `a[href="/facture-paiement/${vendorId}"][data-e2e="fact-shootAgain"]`
+      )
+    ) {
+      this.log('warn', 'Website did not load the bills, throwing error')
+      throw new Error('VENDOR_DOWN')
+    }
   }
 
   async getUserDataFromWebsite() {
