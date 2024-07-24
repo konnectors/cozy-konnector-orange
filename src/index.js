@@ -425,7 +425,14 @@ class OrangeContentScript extends ContentScript {
 
   async fetch(context) {
     this.log('info', '🤖 fetch start')
-    const distanceInDays = await this.handleContextInfos(context)
+    const { forceFullSync, distanceInDays } = await this.shouldFullSync(context)
+    this.log(
+      'info',
+      `shouldFullSync : ${JSON.stringify({
+        forceFullSync,
+        distanceInDays
+      })}`
+    )
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
@@ -449,7 +456,7 @@ class OrangeContentScript extends ContentScript {
       // oldbillsUrl might not be present in the intercepted response
       // Perhaps it will appears differently if it does (when newly created contract will have an history to show)
       // Fortunately the account we dispose to develop has just been migrated to this new handling so we might be able to do something when it happen
-      if (FORCE_FETCH_ALL && oldBillsUrl) {
+      if (forceFullSync && oldBillsUrl) {
         const oldBills = await this.fetchOldBills({
           oldBillsUrl,
           vendorId: contract.vendorId
@@ -468,34 +475,6 @@ class OrangeContentScript extends ContentScript {
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
     await this.saveIdentity({ contact: this.store.infosIdentity })
-  }
-
-  async handleContextInfos(context) {
-    this.log('info', '📍️ handleContextInfos starts')
-    const { trigger } = context
-    // force fetch all data (the long way) when last trigger execution is older than 90 days
-    // or when the last job was an error
-    const isFirstJob =
-      !trigger.current_state?.last_failure &&
-      !trigger.current_state?.last_success
-    const isLastJobError =
-      !isFirstJob &&
-      trigger.current_state?.last_failure > trigger.current_state?.last_success
-
-    const hasLastExecution = Boolean(trigger.current_state?.last_execution)
-    const distanceInDays = getDateDistanceInDays(
-      trigger.current_state?.last_execution
-    )
-    this.log('debug', `distanceInDays: ${distanceInDays}`)
-    if (distanceInDays >= 90 || !hasLastExecution || isLastJobError) {
-      this.log('info', '🐢️ Long execution')
-      this.log('debug', `isLastJobError: ${isLastJobError}`)
-      this.log('debug', `hasLastExecution: ${hasLastExecution}`)
-      FORCE_FETCH_ALL = true
-    } else {
-      this.log('info', '🐇️ Quick execution')
-    }
-    return distanceInDays
   }
 
   async fetchOldBills({ oldBillsUrl, vendorId }) {
