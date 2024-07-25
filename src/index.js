@@ -888,8 +888,7 @@ class OrangeContentScript extends ContentScript {
     // overload ContentScript.downloadFileInWorker to be able to check the status of the file. Since not-so-long ago, recent bills on some account are all receiving a 403 error, issue is on their side, either on browser desktop/mobile.
     // This does not affect bills older than one year (so called oldBills) for the moment
     this.log('debug', 'downloading file in worker')
-    let response
-    response = await fetch(entry.fileurl, {
+    const response = await fetch(entry.fileurl, {
       headers: {
         ...ORANGE_SPECIAL_HEADERS,
         ...JSON_HEADERS
@@ -939,11 +938,4 @@ async function hashVendorRef(vendorRef) {
   const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('') // convert bytes to hex string
   return hashHex
-}
-
-function getDateDistanceInDays(dateString) {
-  const distanceMs = Date.now() - new Date(dateString).getTime()
-  const days = 1000 * 60 * 60 * 24
-
-  return Math.floor(distanceMs / days)
 }
