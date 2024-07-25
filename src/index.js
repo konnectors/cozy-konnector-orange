@@ -5,6 +5,7 @@ import Minilog from '@cozy/minilog'
 import waitFor, { TimeoutError } from 'p-wait-for'
 import ky from 'ky/umd'
 import XhrInterceptor from './interceptor'
+import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 
 const log = Minilog('ContentScript')
 Minilog.enable('orangeCCC')
@@ -426,6 +427,9 @@ class OrangeContentScript extends ContentScript {
   async fetch(context) {
     this.log('info', '🤖 fetch start')
     const { forceFullSync, distanceInDays } = await this.shouldFullSync(context)
+    if (forceFullSync) {
+      FORCE_FETCH_ALL = true
+    }
     this.log(
       'info',
       `shouldFullSync : ${JSON.stringify({
@@ -878,6 +882,30 @@ class OrangeContentScript extends ContentScript {
     const digestId = await hashVendorRef(vendorRef)
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
+  }
+
+  async downloadFileInWorker(entry) {
+    // overload ContentScript.downloadFileInWorker to be able to check the status of the file. Since not-so-long ago, recent bills on some account are all receiving a 403 error, issue is on their side, either on browser desktop/mobile.
+    // This does not affect bills older than one year (so called oldBills) for the moment
+    this.log('debug', 'downloading file in worker')
+    let response
+    response = await fetch(entry.fileurl, {
+      headers: {
+        ...ORANGE_SPECIAL_HEADERS,
+        ...JSON_HEADERS
+      }
+    })
+    const clonedResponse = await response.clone()
+    const respToText = await clonedResponse.text()
+    if (respToText.match('403 Forbidden')) {
+      this.log('warn', 'This file received a 403, check on the website')
+      return null
+    }
+    entry.blob = await response.blob()
+    entry.dataUri = await blobToBase64(entry.blob)
+    if (entry.dataUri) {
+      return entry.dataUri
+    }
   }
 }
 
