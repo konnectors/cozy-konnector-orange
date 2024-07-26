@@ -5769,10 +5769,12 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(18);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(32);
-/* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(30);
-/* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(ky_umd__WEBPACK_IMPORTED_MODULE_4__);
+/* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(30);
+/* harmony import */ var ky_umd__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(ky_umd__WEBPACK_IMPORTED_MODULE_5__);
 /* harmony import */ var _interceptor__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(52);
+/* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(33);
 /* eslint-disable no-console */
+
 
 
 
@@ -6199,7 +6201,17 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   async fetch(context) {
     this.log('info', '🤖 fetch start')
-    const distanceInDays = await this.handleContextInfos(context)
+    const { forceFullSync, distanceInDays } = await this.shouldFullSync(context)
+    if (forceFullSync) {
+      FORCE_FETCH_ALL = true
+    }
+    this.log(
+      'info',
+      `shouldFullSync : ${JSON.stringify({
+        forceFullSync,
+        distanceInDays
+      })}`
+    )
     if (this.store.userCredentials != undefined) {
       await this.saveCredentials(this.store.userCredentials)
     }
@@ -6223,7 +6235,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       // oldbillsUrl might not be present in the intercepted response
       // Perhaps it will appears differently if it does (when newly created contract will have an history to show)
       // Fortunately the account we dispose to develop has just been migrated to this new handling so we might be able to do something when it happen
-      if (FORCE_FETCH_ALL && oldBillsUrl) {
+      if (forceFullSync && oldBillsUrl) {
         const oldBills = await this.fetchOldBills({
           oldBillsUrl,
           vendorId: contract.vendorId
@@ -6242,34 +6254,6 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await this.navigateToPersonalInfos()
     await this.runInWorker('getIdentity')
     await this.saveIdentity({ contact: this.store.infosIdentity })
-  }
-
-  async handleContextInfos(context) {
-    this.log('info', '📍️ handleContextInfos starts')
-    const { trigger } = context
-    // force fetch all data (the long way) when last trigger execution is older than 90 days
-    // or when the last job was an error
-    const isFirstJob =
-      !trigger.current_state?.last_failure &&
-      !trigger.current_state?.last_success
-    const isLastJobError =
-      !isFirstJob &&
-      trigger.current_state?.last_failure > trigger.current_state?.last_success
-
-    const hasLastExecution = Boolean(trigger.current_state?.last_execution)
-    const distanceInDays = getDateDistanceInDays(
-      trigger.current_state?.last_execution
-    )
-    this.log('debug', `distanceInDays: ${distanceInDays}`)
-    if (distanceInDays >= 90 || !hasLastExecution || isLastJobError) {
-      this.log('info', '🐢️ Long execution')
-      this.log('debug', `isLastJobError: ${isLastJobError}`)
-      this.log('debug', `hasLastExecution: ${hasLastExecution}`)
-      FORCE_FETCH_ALL = true
-    } else {
-      this.log('info', '🐇️ Quick execution')
-    }
-    return distanceInDays
   }
 
   async fetchOldBills({ oldBillsUrl, vendorId }) {
@@ -6537,7 +6521,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async getOldBillsFromWorker(oldBillsUrl) {
     const OLD_BILLS_URL_PREFIX =
       'https://espace-client.orange.fr/ecd_wp/facture/historicBills'
-    return await ky_umd__WEBPACK_IMPORTED_MODULE_4___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
+    return await ky_umd__WEBPACK_IMPORTED_MODULE_5___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
         headers: {
           ...ORANGE_SPECIAL_HEADERS,
           ...JSON_HEADERS
@@ -6673,6 +6657,29 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const shortenedId = digestId.substr(0, 5)
     return `${date}_orange_${amount}€_${shortenedId}.pdf`
   }
+
+  async downloadFileInWorker(entry) {
+    // overload ContentScript.downloadFileInWorker to be able to check the status of the file. Since not-so-long ago, recent bills on some account are all receiving a 403 error, issue is on their side, either on browser desktop/mobile.
+    // This does not affect bills older than one year (so called oldBills) for the moment
+    this.log('debug', 'downloading file in worker')
+    const response = await fetch(entry.fileurl, {
+      headers: {
+        ...ORANGE_SPECIAL_HEADERS,
+        ...JSON_HEADERS
+      }
+    })
+    const clonedResponse = await response.clone()
+    const respToText = await clonedResponse.text()
+    if (respToText.match('403 Forbidden')) {
+      this.log('warn', 'This file received a 403, check on the website')
+      return null
+    }
+    entry.blob = await response.blob()
+    entry.dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_4__.blobToBase64)(entry.blob)
+    if (entry.dataUri) {
+      return entry.dataUri
+    }
+  }
 }
 
 const connector = new OrangeContentScript()
@@ -6705,13 +6712,6 @@ async function hashVendorRef(vendorRef) {
   const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('') // convert bytes to hex string
   return hashHex
-}
-
-function getDateDistanceInDays(dateString) {
-  const distanceMs = Date.now() - new Date(dateString).getTime()
-  const days = 1000 * 60 * 60 * 24
-
-  return Math.floor(distanceMs / days)
 }
 
 })();
