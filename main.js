@@ -6042,7 +6042,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const isDisconnected = elcosHeader
       ? Boolean(
           elcosHeader.shadowRoot.querySelector(
-            'a[data-oevent-action=identifiezvous]'
+            '[data-oevent-action=identifiezvous]'
           )
         )
       : false
@@ -6103,7 +6103,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       await this.evaluateInWorker(() => {
         document
           .querySelector('#o-header > elcos-header')
-          .shadowRoot.querySelector('a[data-oevent-action=identifiezvous]')
+          .shadowRoot.querySelector('[data-oevent-action=seconnecter]')
           .click()
       })
     } else {
@@ -6174,7 +6174,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const isDisconnectElementPresent = elcosHeader
       ? Boolean(
           elcosHeader.shadowRoot.querySelector(
-            'a[data-oevent-action=identifiezvous]'
+            '[data-oevent-action=identifiezvous]'
           )
         )
       : false
