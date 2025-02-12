@@ -6278,7 +6278,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       await this.saveCredentials(this.store.userCredentials)
     }
     await this.goto(DEFAULT_PAGE_URL)
-    await this.waitForElementInWorker('.menu')
+    await this.waitForElementInWorker('ecm-section-bill')
     const contracts = await this.runInWorker('getContracts')
     for (const contract of contracts) {
       const { recentBills, oldBillsUrl } = await this.fetchRecentBills(
