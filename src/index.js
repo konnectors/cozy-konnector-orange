@@ -175,7 +175,9 @@ class OrangeContentScript extends ContentScript {
 
   getCurrentState() {
     const isErrorUrl = window.location.href.includes('error')
-    const isLoginPage = Boolean(document.querySelector('#login'))
+    // Verify if element is present AND if its value is empty as it is now present on passwordPage and have the user's login as value
+    const isLoginPage = document.querySelector('#login')?.value === ''
+
     const isPasswordAlone = Boolean(
       document.querySelector('#password') && !isLoginPage
     )
