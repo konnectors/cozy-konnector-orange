@@ -5865,6 +5865,8 @@ const ERROR_URL = 'https://e.orange.fr/error403.html?ref=idme-ssr&status=error'
 const BASE_URL = 'https://www.orange.fr/portail'
 const DEFAULT_PAGE_URL = 'https://espace-client.orange.fr/accueil'
 let FORCE_FETCH_ALL = false
+// For test purpose
+// let FORCE_FETCH_ALL = true
 const interceptor = new _interceptor__WEBPACK_IMPORTED_MODULE_3__["default"]()
 interceptor.init()
 
@@ -6012,7 +6014,9 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
 
   getCurrentState() {
     const isErrorUrl = window.location.href.includes('error')
-    const isLoginPage = Boolean(document.querySelector('#login'))
+    // Verify if element is present AND if its value is empty as it is now present on passwordPage and have the user's login as value
+    const isLoginPage = document.querySelector('#login')?.value === ''
+
     const isPasswordAlone = Boolean(
       document.querySelector('#password') && !isLoginPage
     )
@@ -6297,6 +6301,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
       // oldbillsUrl might not be present in the intercepted response
       // Perhaps it will appears differently if it does (when newly created contract will have an history to show)
       // Fortunately the account we dispose to develop has just been migrated to this new handling so we might be able to do something when it happen
+      // const testFullsync = true
       if (forceFullSync && oldBillsUrl) {
         const oldBills = await this.fetchOldBills({
           oldBillsUrl,
@@ -6583,13 +6588,19 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   async getOldBillsFromWorker(oldBillsUrl) {
     const OLD_BILLS_URL_PREFIX =
       'https://espace-client.orange.fr/ecd_wp/facture/historicBills'
-    return await ky_umd__WEBPACK_IMPORTED_MODULE_5___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
-        headers: {
-          ...ORANGE_SPECIAL_HEADERS,
-          ...JSON_HEADERS
-        }
-      })
-      .json()
+    const response = await ky_umd__WEBPACK_IMPORTED_MODULE_5___default().get(OLD_BILLS_URL_PREFIX + oldBillsUrl, {
+      headers: {
+        ...ORANGE_SPECIAL_HEADERS,
+        ...JSON_HEADERS
+      }
+    })
+    this.log('debug', `oldBills response status : ${response.status}`)
+    if (response.status === 204) {
+      this.log('warn', 'Request status is 204, return no content')
+      return { oldBills: [] }
+    }
+    const jsonBills = await response.json()
+    return jsonBills
   }
 
   async getRecentBillsFromInterceptor() {
