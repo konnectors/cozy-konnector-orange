@@ -18236,7 +18236,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     const isDisconnected = elcosHeader
       ? Boolean(
           elcosHeader.shadowRoot.querySelector(
-            '[data-oevent-action=identifiezvous]'
+            '[data-oevent-action="seconnecter"]'
           )
         )
       : false
