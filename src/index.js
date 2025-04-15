@@ -209,7 +209,7 @@ class OrangeContentScript extends ContentScript {
     const isDisconnected = elcosHeader
       ? Boolean(
           elcosHeader.shadowRoot.querySelector(
-            '[data-oevent-action=identifiezvous]'
+            '[data-oevent-action="seconnecter"]'
           )
         )
       : false
