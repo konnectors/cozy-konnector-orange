@@ -18090,7 +18090,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
           clickedElementContent !== 'Continuer'
         ) {
           const login = document.querySelector(
-            `[data-testid=selected-account-login]`
+            `span[data-testid="user-login"]`
           )?.textContent
           const password = document.querySelector('#password')?.value
           this.bridge.emit('workerEvent', {
@@ -18105,7 +18105,7 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
     await this.waitForDomReady()
     if (
       !(await this.checkForElement('#remember')) &&
-      (await this.checkForElement('[data-testid=selected-account-login]'))
+      (await this.checkForElement('span[data-testid="user-login"]'))
     ) {
       this.log(
         'warn',
@@ -18386,21 +18386,48 @@ class OrangeContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTE
   }
 
   async autoFill(credentials) {
-    if (credentials.login) {
-      const loginElement = document.querySelector('#login')
-      if (loginElement) {
-        loginElement.addEventListener('click', () => {
-          loginElement.value = credentials.login
-        })
-        const submitElement = document.querySelector('#btnSubmit')
-        submitElement.addEventListener('click', async () => {
-          await this.waitForElementNoReload('#password')
-          const passwordElement = document.querySelector('#password')
-          passwordElement.focus()
-          passwordElement.value = credentials.password
-        })
-      }
+    const loginInput = document.querySelector('#login')
+    let passwordInput = document.querySelector('#password')
+    let mobileConnectSumbit = document.querySelector(
+      'button[data-testid="submit-mc"]'
+    )
+    if (credentials.login && loginInput && !passwordInput) {
+      // Fully simulate React event to bypass orange's verifications
+      await this.dispatchReactEvent(loginInput, credentials.login)
+      // Waiting for both password input or mobileConnect submit button
+      await this.waitForElementNoReload(
+        '#password, button[data-testid="submit-mc"]'
+      )
+      this.log('debug', 'Password input or MCSubmit button showed up')
     }
+    // check presence again in case the login autoFill has been done
+    passwordInput = document.querySelector('#password')
+    mobileConnectSumbit = document.querySelector(
+      'button[data-testid="submit-mc"]'
+    )
+    this.log('debug', `Password input : ${Boolean(passwordInput)}`)
+    this.log('debug', `MCSubmit button : ${Boolean(mobileConnectSumbit)}`)
+    if (credentials.password && passwordInput && !mobileConnectSumbit) {
+      await this.dispatchReactEvent(passwordInput, credentials.password)
+    }
+  }
+
+  async dispatchReactEvent(targetInput, credential) {
+    this.log('info', '📍️ dispatchReactEvent starts')
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value'
+    ).set
+    targetInput.focus()
+    targetInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    targetInput.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    targetInput.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // set value via native setter
+    nativeInputValueSetter.call(targetInput, credential)
+    // dispatch input event React-style
+    const event = new Event('input', { bubbles: true })
+    event.simulated = true // React checks for this
+    targetInput.dispatchEvent(event)
   }
 
   async waitForUserAuthentication() {
